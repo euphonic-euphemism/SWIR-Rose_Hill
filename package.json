@@ -1,6 +1,6 @@
 {
-  "name": "audiometry-app",
-  "version": "1.0.0",
+  "name": "swir-audiometry-app",
+  "version": "1.0.6",
   "description": "Speech Audiometry Scoring Application",
   "main": "electron/main.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "electron",
     "react"
   ],
-  "author": "Mark Shaver <mark.shaver@posteo.net>",
+  "author": "Mark Shaver <mark.shaver@hearinglife.com>",
   "license": "MIT",
   "devDependencies": {
     "@babel/core": "^7.23.0",
@@ -40,6 +40,7 @@
   "build": {
     "appId": "com.audiometry.app",
     "productName": "SWIR Audiometry",
+    "executableName": "swir-audiometry",
     "directories": {
       "buildResources": "assets",
       "output": "dist"
@@ -64,7 +65,7 @@
         "deb"
       ],
       "category": "Science",
-      "maintainer": "Mark Shaver <mark.shaver@posteo.net>",
+      "maintainer": "Mark Shaver <mark.shaver@hearinglife.com>",
       "icon": "assets/icon.png"
     }
   }
