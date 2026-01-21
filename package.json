@@ -1,6 +1,6 @@
 {
   "name": "swir-audiometry-app",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Speech Audiometry Scoring Application",
   "main": "electron/main.js",
   "scripts": {
@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "com.audiometry.app",
-    "productName": "SWIR Audiometry",
+    "productName": "SWIR-Audiometry",
     "executableName": "swir-audiometry",
     "directories": {
       "buildResources": "assets",
