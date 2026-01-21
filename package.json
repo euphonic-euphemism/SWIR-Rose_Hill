@@ -16,7 +16,7 @@
     "electron",
     "react"
   ],
-  "author": "",
+  "author": "Mark Shaver <mark.shaver@posteo.net>",
   "license": "MIT",
   "devDependencies": {
     "@babel/core": "^7.23.0",
@@ -64,6 +64,7 @@
         "deb"
       ],
       "category": "Science",
+      "maintainer": "Mark Shaver <mark.shaver@posteo.net>",
       "icon": "assets/icon.png"
     }
   }
