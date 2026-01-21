@@ -8,9 +8,14 @@
     "build": "webpack --mode production",
     "electron": "electron .",
     "dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && npm run electron\"",
-    "package": "electron-builder"
+    "package": "npm run build && electron-builder"
   },
-  "keywords": ["audiometry", "speech", "electron", "react"],
+  "keywords": [
+    "audiometry",
+    "speech",
+    "electron",
+    "react"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
@@ -34,15 +39,32 @@
   },
   "build": {
     "appId": "com.audiometry.app",
-    "productName": "Audiometry App",
+    "productName": "SWIR Audiometry",
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
     "files": [
       "dist/**/*",
       "electron/**/*",
       "audio_output/**/*",
       "sentences.json"
     ],
-    "directories": {
-      "buildResources": "assets"
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Science",
+      "icon": "assets/icon.png"
     }
   }
 }

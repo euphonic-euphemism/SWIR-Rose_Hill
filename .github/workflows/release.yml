@@ -1,0 +1,37 @@
+name: Build & Release
+
+# Trigger this workflow only when a Release is created on GitHub
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        # Build on all three operating systems simultaneously
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      # This runs the "package" script in your package.json
+      # which builds React and then runs electron-builder
+      - name: Build & Release
+        env:
+          # This token is automatically provided by GitHub Actions
+          # It allows electron-builder to upload the files to the Release
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run package -- --publish always
