@@ -1,155 +1,86 @@
-# Speech Audiometry Scoring Application
+SWIR Rose Hill - Speech Audiometry Scoring System
 
-A cross-platform desktop application for speech audiometry testing and scoring, built with React and Electron.
+This application is a specialized speech audiometry scoring tool designed to administer and score the SWIR (Speech Words in Reverberation) test. It replaces legacy manual scoring methods with a modern, cross-platform Electron/React interface.
 
-## Features
+The system allows audiologists to play pre-recorded sentence blocks, control signal-to-noise ratios (SNR), and digitally score patient responses in real-time.
+Features
+🎧 Audio Playback & Control
 
-- **Block-based Testing**: Sentences organized in blocks of 3, 4, 5, 6, and 7 sentences
-- **Two Forms**: Separate scoring for Form A (sentences 1-25) and Form B (sentences 26-50)
-- **Sequential Playback**: Automatic playback of all sentences in a block
-- **Target Word Scoring**: Score each target word as correct or incorrect after block playback
-- **Calibration Tone**: Built-in calibration tone for sound level meter setup
-- **Results Export**: Export detailed results to text files
-- **Cross-Platform**: Runs on Windows, macOS, and Linux
+    Form Management: Seamlessly switch between Form A and Form B sentence lists.
 
-## Installation
+    Block Structure: Plays sentences in standard blocks of varying sizes (3, 4, 5, 6, 7 sentences).
 
-1. Install dependencies:
-```bash
-npm install
-```
+    Channel Routing: Configurable stereo output allows for split routing (Speech Left/Noise Right or Speech Right/Noise Left).
 
-## Usage
+    Calibration: Built-in 1kHz calibration tone generator for setting precise audiometer levels.
 
-### Development Mode
+📉 Advanced Noise Control
 
-Run the application in development mode with hot reloading:
+    Speech-Shaped Noise: Option to toggle continuous background noise during testing.
 
-```bash
-npm run dev
-```
+    SNR Adjustment: Real-time slider to adjust Signal-to-Noise Ratio from -10 dB to +20 dB.
 
-This will:
-- Start the webpack dev server on port 3000
-- Launch the Electron app with developer tools
-- Enable hot module reloading for React components
+    Stereo Separation: Independent panning ensures speech and noise are routed to opposite ears as required by the testing protocol.
 
-### Production Build
+📝 Scoring & Analytics
 
-Build the application for production:
+    Digital Scoring: Simple "Correct/Incorrect" interface for each target word.
 
-```bash
-npm run build
-```
+    Live Visualization: Real-time bar charts compare patient performance across different block sizes.
 
-Package the application for your platform:
+    Data Export: Exports session results to a detailed text file, including timestamp, individual sentence scores, and percentage summaries.
 
-```bash
-npm run package
-```
+    Resume Capability: Scores are preserved in the application state even when switching between forms.
 
-This will create a distributable package in the `dist` folder.
+Installation
 
-## Project Structure
+This project is built with Electron and React.
 
-```
-swir_project/
-├── electron/
-│   └── main.js              # Electron main process
-├── src/
-│   ├── App.js               # Main React component
-│   ├── index.js             # React entry point
-│   ├── index.html           # HTML template
-│   └── styles.css           # Application styles
-├── audio_output/
-│   ├── calibration.wav      # Calibration tone
-│   ├── Form A/
-│   │   └── wav/             # Form A audio files (01.wav - 25.wav)
-│   └── Form B/
-│       └── wav/             # Form B audio files (26.wav - 50.wav)
-├── sentences.json           # Sentence data
-├── package.json             # Project dependencies and scripts
-└── webpack.config.js        # Webpack configuration
-```
+    Clone the repository
+    Bash
 
-## How to Use the Application
+    git clone https://github.com/euphonic-euphemism/SWIR-Rose_Hill.git
+    cd SWIR-Rose_Hill
 
-1. **Select Form**: Choose Form A or Form B using the radio buttons
+    Install dependencies
+    Bash
 
-2. **Calibrate** (optional): Click "Play Calibration Tone" to calibrate your sound level meter
+    npm install
 
-3. **Play Block**: Click "Play Block" to play all sentences in the current block sequentially
+    Run in Development Mode This will start the React dev server and launch the Electron wrapper:
+    Bash
 
-4. **Score Responses**: After the block finishes playing, score each target word:
-   - Click ✓ if the target word was heard correctly
-   - Click ✗ if the target word was heard incorrectly
+    npm run dev
 
-5. **Navigate Blocks**: Use "Next Block" and "Previous Block" to move through all 5 blocks
+    Build for Production To create a standalone executable (Windows/Linux/Mac):
+    Bash
 
-6. **View Results**: Results are displayed in real-time showing:
-   - Individual sentence scores
-   - Total correct/scored
-   - Percentage correct
+    npm run package
 
-7. **Export**: Click "Export Results" to save detailed results to a text file
+Usage Guide
 
-8. **Reset**: Click "Reset Form" to clear all scores and start over
+    Calibration: Before starting a test, click "🔊 Both Channels" (or individual channels) to play the calibration tone and adjust your audiometer to VU 0.
 
-## Block Structure
+    Select Form: Choose Form A or Form B at the top of the interface.
 
-Each form contains 25 sentences divided into 5 blocks:
-- Block 1: 3 sentences
-- Block 2: 4 sentences
-- Block 3: 5 sentences
-- Block 4: 6 sentences
-- Block 5: 7 sentences
+    Configure Output: Select the desired output routing (e.g., "Speech Left / Noise Right").
 
-## Audio File Requirements
+    Playback: Click "▶ Play Block" to present the sentences. The audio plays automatically with a 3-second inter-stimulus interval.
 
-- Audio files must be in WAV format
-- Files should be named with their sentence ID (e.g., `01.wav`, `02.wav`)
-- Form A files: IDs 01-25 in `audio_output/Form A/wav/`
-- Form B files: IDs 26-50 in `audio_output/Form B/wav/`
-- Calibration tone: `audio_output/calibration.wav`
+    Scoring: After the block finishes, the scoring interface appears. Mark each target word as Correct (✓) or Incorrect (✗) based on the patient's response.
 
-## Technology Stack
+    Export: At the end of the session, click "Export Results" to save a permanent record.
 
-- **React 18**: UI framework
-- **Electron 27**: Desktop application framework
-- **Webpack 5**: Module bundler
-- **Babel**: JavaScript transpiler
-- **HTML5 Audio API**: Audio playback
+Project Structure
 
-## Troubleshooting
+    src/App.js: Main application logic, state management, and audio handling.
 
-### Audio files not playing
-- Verify audio files exist in the correct directories
-- Check file naming matches sentence IDs
-- Ensure files are in WAV format
+    electron/main.js: Electron main process configuration.
 
-### Application won't start
-- Run `npm install` to ensure all dependencies are installed
-- Check that Node.js version is 16 or higher
-- Try deleting `node_modules` and running `npm install` again
+    audio_output/: Directory containing the .wav sentence recordings and calibration tones.
 
-### Development mode not hot-reloading
-- Ensure webpack dev server is running on port 3000
-- Check that no other application is using port 3000
-- Restart the development server
+    sentences.json: Data file containing the transcripts and target words for all forms.
 
-## Building for Distribution
+License
 
-To create installers for different platforms:
-
-```bash
-# Windows
-npm run package
-
-# The output will be in the dist folder
-```
-
-Configure additional build options in the `build` section of `package.json`.
-
-## License
-
-MIT
+MIT License
