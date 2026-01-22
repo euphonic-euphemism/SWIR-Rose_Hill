@@ -4,6 +4,11 @@ const path = require('path');
 // This check is the key. It will be false in development and true in production.
 const isPackaged = app.isPackaged;
 
+// Define a global variable to hold the path to your audio files
+global.audioPath = isPackaged
+  ? path.join(process.resourcesPath, 'app', 'audio_output')
+  : path.join(__dirname, '..', 'audio_output');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1000,

@@ -3,6 +3,9 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import sentencesData from '../sentences.json';
 
+const { remote } = window.require ? window.require('electron') : {};
+const audioPath = remote ? remote.getGlobal('audioPath') : 'audio_output';
+
 const BLOCK_SIZES = [3, 4, 5, 6, 7];
 
 function App() {
@@ -69,7 +72,7 @@ function App() {
       }
       
       // Start continuous noise
-      const noise = new Audio('audio_output/babble_noise.wav');
+      const noise = new Audio(`${audioPath}/babble_noise.wav`);
       noise.loop = true;
       noise.crossOrigin = 'anonymous';
       
@@ -228,7 +231,7 @@ function App() {
   
   const playCalibrationChannel = (panValue, channelName) => {
     return new Promise((resolve, reject) => {
-      const audio = new Audio('audio_output/calibration_1khz_neg20db.wav');
+      const audio = new Audio(`${audioPath}/calibration_1khz_neg20db.wav`);
       audio.crossOrigin = 'anonymous';
       
       const source = audioContextRef.current.createMediaElementSource(audio);
@@ -264,10 +267,10 @@ function App() {
       const sentence = blockSentences[i];
       setCurrentPlayingIndex(i);
       
-      const audioPath = `audio_output/Form ${currentForm}/wav/swir_${sentence.id}.wav`;
+      const audioFilePath = `${audioPath}/Form ${currentForm}/wav/swir_${sentence.id}.wav`;
       
       try {
-        await playAudioFile(audioPath);
+        await playAudioFile(audioFilePath);
         // 3-second interstimulus interval
         await new Promise(resolve => setTimeout(resolve, 3000));
       } catch (err) {
