@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import sentencesData from '../sentences.json';
 
 const BLOCK_SIZES = [3, 4, 5, 6, 7];
 
 function App() {
+  const [patientName, setPatientName] = useState('');
+  const [testDate, setTestDate] = useState(new Date().toISOString().slice(0, 10));
   const [currentForm, setCurrentForm] = useState('A');
   const [currentBlock, setCurrentBlock] = useState(0);
   const [scores, setScores] = useState({ A: {}, B: {} });
@@ -65,7 +69,7 @@ function App() {
       }
       
       // Start continuous noise
-      const noise = new Audio('audio_output/speech_shaped_noise.wav');
+      const noise = new Audio('audio_output/babble_noise.wav');
       noise.loop = true;
       noise.crossOrigin = 'anonymous';
       
@@ -138,12 +142,13 @@ function App() {
   };
   
   const getFormBlockStats = (formName) => {
-    // Safety checks
-    if (!sentencesData || !sentencesData.forms || !sentencesData.forms[formName]) {
+    const formSents = sentencesData.filter(s => s.list === formName);
+    
+    // Safety check
+    if (!formSents || formSents.length === 0) {
       return BLOCK_SIZES.map(() => ({ correct: 0, total: 0, percentage: 0 }));
     }
     
-    const formSents = sentencesData.forms[formName];
     const formScores = scores[formName] || {};
     
     return BLOCK_SIZES.map((size, blockNum) => {
@@ -354,11 +359,15 @@ function App() {
   };
 
   const exportResults = () => {
+    const safePatientName = patientName.replace(/[^a-zA-Z0-9]/g, '_') || 'unnamed';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `audiometry_results_Form${currentForm}_${timestamp}.txt`;
+    const filename = `audiometry_results_${safePatientName}_${timestamp}.txt`;
     
-    let content = `Speech Audiometry Results - Form ${currentForm}\n`;
-    content += `Date: ${new Date().toLocaleString()}\n`;
+    let content = `Speech Audiometry Results\n`;
+    content += '='.repeat(80) + '\n';
+    content += `Patient Name: ${patientName}\n`;
+    content += `Test Date: ${testDate}\n`;
+    content += `Form: ${currentForm}\n`;
     content += '='.repeat(80) + '\n\n';
     
     let correctCount = 0;
@@ -402,6 +411,29 @@ function App() {
     alert(`Results exported to: ${filename}`);
   };
 
+  const generatePdf = () => {
+    const doc = new jsPDF();
+    const tableData = formSentences.map(s => {
+      const score = scores[currentForm][s.id];
+      const scoreMark = score === undefined ? '-' : score ? '✓' : '✗';
+      return [s.id, s.text, s.target, scoreMark];
+    });
+
+    doc.autoTable({
+      head: [['ID', 'Sentence', 'Target Word', 'Score']],
+      body: tableData,
+      startY: 50,
+    });
+
+    doc.text('Speech Audiometry Results', 14, 20);
+    doc.text(`Patient Name: ${patientName}`, 14, 30);
+    doc.text(`Test Date: ${testDate}`, 14, 40);
+
+    const safePatientName = patientName.replace(/[^a-zA-Z0-9]/g, '_') || 'unnamed';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    doc.save(`audiometry_report_${safePatientName}_${timestamp}.pdf`);
+  };
+
   const blockSentences = getCurrentBlockSentences();
   const blockSize = BLOCK_SIZES[currentBlock];
   const targets = blockSentences.map(s => s.target).join(', ');
@@ -419,6 +451,32 @@ function App() {
   return (
     <div className="app">
       <h1>Speech Audiometry Scoring System</h1>
+
+      {/* Patient Info Section */}
+      <div className="section">
+        <div className="section-title">Patient Information</div>
+        <div className="patient-info-grid">
+          <div className="input-group">
+            <label htmlFor="patientName">Patient Name</label>
+            <input
+              type="text"
+              id="patientName"
+              value={patientName}
+              onChange={(e) => setPatientName(e.target.value)}
+              placeholder="Enter patient's name"
+            />
+          </div>
+          <div className="input-group">
+            <label htmlFor="testDate">Test Date</label>
+            <input
+              type="date"
+              id="testDate"
+              value={testDate}
+              onChange={(e) => setTestDate(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Form Selection */}
       <div className="section">
@@ -691,7 +749,7 @@ function App() {
               ))}
             </div>
           </div>
-          <div className="graph-x-title">Block Size (Number of Sentences)</div>
+          <div className="graph-x-title">Set Size</div>
         </div>
       )}
 
@@ -716,6 +774,7 @@ function App() {
                     </div>
                   </div>
                   <div className="graph-container">
+                    <div className="graph-y-axis-title">Performance</div>
                     <div className="graph-y-axis">
                       <div className="y-label">100%</div>
                       <div className="y-label">75%</div>
@@ -749,7 +808,7 @@ function App() {
                       })}
                     </div>
                   </div>
-                  <div className="graph-x-title">Block Size (Number of Sentences)</div>
+                  <div className="graph-x-title">Set Size</div>
                 </div>
               );
             })}
@@ -778,6 +837,7 @@ function App() {
                     </div>
                   </div>
                   <div className="graph-container">
+                    <div className="graph-y-axis-title">Performance</div>
                     <div className="graph-y-axis">
                       <div className="y-label">100%</div>
                       <div className="y-label">75%</div>
@@ -805,7 +865,7 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  <div className="graph-x-title">Block Size (Number of Sentences)</div>
+                  <div className="graph-x-title">Set Size</div>
                 </div>
               );
             })}
@@ -826,6 +886,9 @@ function App() {
         </button>
         <button className="btn" onClick={exportResults}>
           Export Results
+        </button>
+        <button className="btn" onClick={generatePdf}>
+          Print PDF
         </button>
       </div>
     </div>

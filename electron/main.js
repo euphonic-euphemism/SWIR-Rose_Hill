@@ -1,6 +1,9 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
+// This check is the key. It will be false in development and true in production.
+const isPackaged = app.isPackaged;
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1000,
@@ -8,14 +11,17 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      enableRemoteModule: true
-    }
+    },
   });
 
   // Load the app
-  // Always load from dev server when using npm run dev
-  win.loadURL('http://localhost:3000');
-  win.webContents.openDevTools();
+  if (!isPackaged) {
+    // In development (when isPackaged is false), load from the dev server
+    win.loadURL('http://localhost:3001');
+  } else {
+    // In production (when isPackaged is true), load the bundled file
+    win.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
 }
 
 app.whenReady().then(createWindow);

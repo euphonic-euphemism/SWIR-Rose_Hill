@@ -1,10 +1,14 @@
 name: Build & Release
 
-# Trigger the build when you push a tag starting with "v" (e.g. v1.0.2)
 on:
   push:
     tags:
       - 'v*'
+
+# ⚠️ THIS IS THE MISSING PIECE ⚠️
+# This gives the workflow permission to upload files to Releases
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -12,7 +16,6 @@ jobs:
 
     strategy:
       matrix:
-        # Build for all three platforms
         os: [macos-latest, ubuntu-latest, windows-latest]
 
     steps:
@@ -28,10 +31,7 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      # This runs "npm run package", which triggers electron-builder.
-      # The "--publish always" flag tells it to upload the exe/dmg/deb files to GitHub.
       - name: Build & Release
         env:
-          # This token is automatically provided by GitHub Actions
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run package -- --publish always
