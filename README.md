@@ -1,86 +1,85 @@
-SWIR Rose Hill - Speech Audiometry Scoring System
+# SWIR Speech Audiometry Scoring System
 
-This application is a specialized speech audiometry scoring tool designed to administer and score the SWIR (Speech Words in Reverberation) test. It replaces legacy manual scoring methods with a modern, cross-platform Electron/React interface.
+A desktop application for administering and scoring Speech Audiometry tests (SWIR). Built with **Electron**, **React**, and **Webpack**.
 
-The system allows audiologists to play pre-recorded sentence blocks, control signal-to-noise ratios (SNR), and digitally score patient responses in real-time.
-Features
-🎧 Audio Playback & Control
+![App Screenshot](assets/icon.png)
 
-    Form Management: Seamlessly switch between Form A and Form B sentence lists.
+## Features
 
-    Block Structure: Plays sentences in standard blocks of varying sizes (3, 4, 5, 6, 7 sentences).
+- **Standardized Forms**: Includes Form A and Form B with 50 sentences each (2 blocks of 25).
+- **Audio Playback**:
+  - Integrated audio player with sentence-by-sentence playback.
+  - **Stereo Control**: Route speech and noise to specific channels (Left/Right).
+  - **Masking Noise**: Built-in multi-talker babble noise with independent SNR calibration.
+  - **Calibration**: Play 1kHz calibration tones to verify output levels.
+- **Practice Mode**: A dedicated mode ("Form Practice") for patient acclimatization (results excluded from clinical scoring).
+- **Scoring & Reporting**:
+  - Live identifying of target words.
+  - Automated scoring (Correct/Incorrect).
+  - **Real-time Visualization**: Combined grouped bar graphs comparing Form A vs. Form B performance.
+  - **PDF Export**: Generate detailed clinical reports with patient data and performance graphs.
+- **Cross-Platform**: Runs on Windows, macOS, and Linux.
 
-    Channel Routing: Configurable stereo output allows for split routing (Speech Left/Noise Right or Speech Right/Noise Left).
+## Installation & Development
 
-    Calibration: Built-in 1kHz calibration tone generator for setting precise audiometer levels.
+### Prerequisites
+- Node.js (v18 or higher recommended)
+- NPM
 
-📉 Advanced Noise Control
+### Setup
+```bash
+# Clone the repository
+git clone https://github.com/your-org/swir-audiometry.git
 
-    Speech-Shaped Noise: Option to toggle continuous background noise during testing.
+# Install dependencies
+cd swir-audiometry
+npm install
+```
 
-    SNR Adjustment: Real-time slider to adjust Signal-to-Noise Ratio from -10 dB to +20 dB.
+### Running Locally
+To start the React dev server and Electron wrapper simultaneously:
+```bash
+npm run dev
+```
+- The React app runs on `http://localhost:3001`.
+- Electron window opens automatically.
 
-    Stereo Separation: Independent panning ensures speech and noise are routed to opposite ears as required by the testing protocol.
+## Audio Asset Structure
+The application denies relying on strict file paths for audio playback. Ensure your `audio_output` directory is structured as follows:
 
-📝 Scoring & Analytics
+```
+swir_project/
+├── audio_output/
+│   ├── Form A/
+│   │   └── wav/
+│   │       ├── swir_01.wav
+│   │       └── ...
+│   ├── Form B/
+│   │   └── wav/
+│   │       ├── swir_26.wav
+│   │       └── ...
+│   └── Form Practice/
+│       └── wav/
+│           ├── swir_p01.wav
+│           └── ... (up to swir_p05.wav)
+```
 
-    Digital Scoring: Simple "Correct/Incorrect" interface for each target word.
+## Building for Production
 
-    Live Visualization: Real-time bar charts compare patient performance across different block sizes.
+This project uses `electron-builder` to create installers for Windows (.exe), macOS (.dmg), and Linux (.AppImage/.deb).
 
-    Data Export: Exports session results to a detailed text file, including timestamp, individual sentence scores, and percentage summaries.
+```bash
+# Build for current OS
+npm run package
+```
 
-    Resume Capability: Scores are preserved in the application state even when switching between forms.
+### GitHub Actions (CI/CD)
+Automated builds are configured in `.github/workflows/build.yml`.
+- **Push to `main`**: Triggers a test build.
+- **Tag (`v*`)**: Triggers a build and creates a **GitHub Release** with attached artifacts.
 
-Installation
+## License
+MIT License. See [LICENSE](LICENSE) for details.
 
-This project is built with Electron and React.
-
-    Clone the repository
-    Bash
-
-    git clone https://github.com/euphonic-euphemism/SWIR-Rose_Hill.git
-    cd SWIR-Rose_Hill
-
-    Install dependencies
-    Bash
-
-    npm install
-
-    Run in Development Mode This will start the React dev server and launch the Electron wrapper:
-    Bash
-
-    npm run dev
-
-    Build for Production To create a standalone executable (Windows/Linux/Mac):
-    Bash
-
-    npm run package
-
-Usage Guide
-
-    Calibration: Before starting a test, click "🔊 Both Channels" (or individual channels) to play the calibration tone and adjust your audiometer to VU 0.
-
-    Select Form: Choose Form A or Form B at the top of the interface.
-
-    Configure Output: Select the desired output routing (e.g., "Speech Left / Noise Right").
-
-    Playback: Click "▶ Play Block" to present the sentences. The audio plays automatically with a 3-second inter-stimulus interval.
-
-    Scoring: After the block finishes, the scoring interface appears. Mark each target word as Correct (✓) or Incorrect (✗) based on the patient's response.
-
-    Export: At the end of the session, click "Export Results" to save a permanent record.
-
-Project Structure
-
-    src/App.js: Main application logic, state management, and audio handling.
-
-    electron/main.js: Electron main process configuration.
-
-    audio_output/: Directory containing the .wav sentence recordings and calibration tones.
-
-    sentences.json: Data file containing the transcripts and target words for all forms.
-
-License
-
-MIT License
+## Author
+Mark Shaver <mark.shaver@hearinglife.com>
