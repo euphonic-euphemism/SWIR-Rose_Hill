@@ -13,7 +13,8 @@ function App() {
   const [testDate, setTestDate] = useState(new Date().toISOString().slice(0, 10));
   const [currentForm, setCurrentForm] = useState('A');
   const [currentBlock, setCurrentBlock] = useState(0);
-  const [scores, setScores] = useState({ A: {}, B: {} });
+  const [isPractice, setIsPractice] = useState(false);
+  const [scores, setScores] = useState({ A: {}, B: {}, P: {} });
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayingIndex, setCurrentPlayingIndex] = useState(null);
   const [showScoring, setShowScoring] = useState(false);
@@ -144,6 +145,7 @@ function App() {
   };
 
   const getCurrentBlockSentences = () => {
+    if (currentForm === 'P') return formSentences;
     const { start, end } = getBlockRange(currentBlock);
     return formSentences.slice(start, end);
   };
@@ -354,6 +356,35 @@ function App() {
     }
   };
 
+  const playSingleSentence = async (sentence) => {
+    if (isPlayingRef.current) return;
+
+    setIsPlaying(true);
+    isPlayingRef.current = true;
+    setCurrentPlayingIndex(formSentences.findIndex(s => s.id === sentence.id));
+
+    try {
+      const audioFilePath = `${audioBaseUrl}/Form ${currentForm}/wav/swir_${sentence.id}.wav`;
+
+      await new Promise((resolve, reject) => {
+        currentCancelRef.current = () => reject(new Error('Cancelled'));
+        playAudioFile(audioFilePath)
+          .then(resolve)
+          .catch(reject);
+      });
+
+    } catch (err) {
+      if (err.message !== 'Cancelled') {
+        alert(`Error playing audio: ${err.message}`);
+      }
+    } finally {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setCurrentPlayingIndex(null);
+      currentCancelRef.current = null;
+    }
+  };
+
   const playAudioFile = async (path) => {
     // Ensure context exists
     if (!audioContextRef.current || !speechPannerRef.current) {
@@ -466,6 +497,25 @@ function App() {
         [sentenceId]: correct
       }
     }));
+  };
+
+  const toggleWordScore = (sentenceId, wordIndex, isCorrect) => {
+    setScores(prev => {
+      const currentFormScores = prev[currentForm];
+      const currentSentenceScores = currentFormScores[sentenceId] || []; // Array of bools
+
+      // Copy array or create new one enough to hold index
+      const newSentenceScores = [...currentSentenceScores];
+      newSentenceScores[wordIndex] = isCorrect;
+
+      return {
+        ...prev,
+        [currentForm]: {
+          ...currentFormScores,
+          [sentenceId]: newSentenceScores
+        }
+      };
+    });
   };
 
   const resetForm = () => {
@@ -689,24 +739,29 @@ function App() {
       <div className="section">
         <div className="section-title">Form Selection</div>
         <div className="form-selection">
-          <label>
-            <input
-              type="radio"
-              value="A"
-              checked={currentForm === 'A'}
-              onChange={(e) => setCurrentForm(e.target.value)}
-            />
-            Form A
-          </label>
-          <label>
-            <input
-              type="radio"
-              value="B"
-              checked={currentForm === 'B'}
-              onChange={(e) => setCurrentForm(e.target.value)}
-            />
-            Form B
-          </label>
+          <div className="btn-group" style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className={`btn ${currentForm === 'A' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => { setCurrentForm('A'); setIsPractice(false); }}
+              disabled={isPlaying || isCalibrationPlaying}
+            >
+              Form A
+            </button>
+            <button
+              className={`btn ${currentForm === 'B' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => { setCurrentForm('B'); setIsPractice(false); }}
+              disabled={isPlaying || isCalibrationPlaying}
+            >
+              Form B
+            </button>
+            <button
+              className={`btn ${currentForm === 'P' ? 'btn-warning' : 'btn-secondary'}`}
+              onClick={() => { setCurrentForm('P'); setIsPractice(true); setCurrentBlock(0); }}
+              disabled={isPlaying || isCalibrationPlaying}
+            >
+              Practice
+            </button>
+          </div>
           <div className="separator"></div>
           {!isCalibrationPlaying ? (
             <div className="calibration-buttons">
@@ -728,235 +783,351 @@ function App() {
         </div>
       </div>
 
-      {/* Current Block Info */}
-      <div className="section">
-        <div className="section-title">Current Block</div>
-        <div className="block-info">
-          <h3>Block {currentBlock + 1}/5 ({blockSize} sentences)</h3>
-          {isPlaying && currentPlayingIndex !== null ? (
-            <>
-              <div className="sentence-text">
-                Playing: ID {blockSentences[currentPlayingIndex].id}
-              </div>
-              <div className="sentence-text">
-                {blockSentences[currentPlayingIndex].text}
-              </div>
-              <div className="target-word">
-                Target Word: {blockSentences[currentPlayingIndex].target}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="sentence-text">Ready to play block {currentBlock + 1}</div>
-              <div className="target-word">Target words: {targets}</div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Playback Controls */}
-      <div className="section">
-        <div className="section-title">Playback Controls</div>
-        <div className="control-buttons">
-          <button className="btn" onClick={previousBlock} disabled={isPlaying}>
-            ⏮ Previous Block
-          </button>
-          <button className="btn" onClick={playBlock} disabled={isPlaying}>
-            ▶ Play Block
-          </button>
-          <button className="btn btn-secondary" onClick={stopAudio} disabled={!isPlaying}>
-            ⏸ Stop
-          </button>
-          <button className="btn" onClick={nextBlock} disabled={isPlaying}>
-            Next Block ⏭
-          </button>
-        </div>
-        <div className="noise-control">
-          <label className="noise-toggle">
-            <input
-              type="checkbox"
-              checked={noiseEnabled}
-              onChange={(e) => setNoiseEnabled(e.target.checked)}
-              disabled={isPlaying}
-            />
-            <span>Add Background Noise</span>
-          </label>
-          {noiseEnabled && (
-            <div className="snr-control">
-              <label className="snr-label">
-                <span>SNR: {snr > 0 ? '+' : ''}{snr} dB</span>
-                <input
-                  type="range"
-                  min="-10"
-                  max="20"
-                  step="1"
-                  value={snr}
-                  onChange={(e) => setSnr(parseInt(e.target.value))}
-                  disabled={isPlaying}
-                  className="snr-slider"
-                />
-                <div className="snr-range-labels">
-                  <span>-10 dB</span>
-                  <span>0 dB</span>
-                  <span>+20 dB</span>
-                </div>
-              </label>
-            </div>
-          )}
-        </div>
-
-        {/* Channel Configuration */}
-        <div className="channel-control">
-          <div className="section-subtitle">Channel Configuration</div>
-          <div className="channel-buttons">
-            <button
-              className={`btn-channel ${channelConfig === 'speech-left' ? 'active' : ''}`}
-              onClick={() => setChannelConfig('speech-left')}
-              disabled={isPlaying || isCalibrationPlaying}
-            >
-              Speech Left / Noise Right
-            </button>
-            <button
-              className={`btn-channel ${channelConfig === 'speech-right' ? 'active' : ''}`}
-              onClick={() => setChannelConfig('speech-right')}
-              disabled={isPlaying || isCalibrationPlaying}
-            >
-              Speech Right / Noise Left
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Scoring */}
-      <div className="section">
-        <div className="section-title">Score Block (after playback)</div>
-        <div className="scoring-container">
-          {showScoring ? (
-            <>
-              <div className="scoring-title">Score each target word:</div>
-              <div className="scoring-grid">
-                {blockSentences.map(sentence => {
-                  const score = scores[currentForm][sentence.id];
-                  return (
-                    <div key={sentence.id} className="scoring-row">
-                      <div className="scoring-row-label">
-                        ID {sentence.id}: {sentence.target}
-                      </div>
-                      <button
-                        className="btn btn-success"
-                        onClick={() => scoreSentence(sentence.id, true)}
-                      >
-                        ✓
-                      </button>
-                      <button
-                        className="btn btn-danger"
-                        onClick={() => scoreSentence(sentence.id, false)}
-                      >
-                        ✗
-                      </button>
-                      <div className={`score-status ${score === true ? 'correct' : score === false ? 'incorrect' : ''}`}>
-                        {score === undefined ? 'Not scored' : score ? '✓ Correct' : '✗ Incorrect'}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="empty-state">Play a block to begin scoring</div>
-          )}
-        </div>
-      </div>
-
-      {/* Results */}
-      <div className="section">
-        <div className="section-title">Form {currentForm} Results</div>
-        <div className="results-section">
-          <table className="results-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Sentence</th>
-                <th>Target Word</th>
-                <th>Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {formSentences.map(s => {
-                const score = scores[currentForm][s.id];
-                const scoreMark = score === undefined ? '-' : score ? '✓' : '✗';
-                const scoreClass = score === undefined ? 'unscored' : score ? 'correct' : 'incorrect';
-                return (
-                  <tr key={s.id} className={scoreClass}>
-                    <td className="id-cell">{s.id}</td>
-                    <td className="sentence-cell">{s.text}</td>
-                    <td className="target-cell">{s.target}</td>
-                    <td className="score-cell">{scoreMark}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div className="results-summary">
-            {scoredCount > 0
-              ? (
+      {/* Standard Form View */}
+      {currentForm !== 'P' && (
+        <>
+          {/* Current Block Info */}
+          <div className="section">
+            <div className="section-title">Current Block</div>
+            <div className="block-info">
+              <h3>Block {currentBlock + 1}/5 ({blockSize} sentences)</h3>
+              {isPlaying && currentPlayingIndex !== null ? (
                 <>
-                  <div className="summary-stat">
-                    <span className="stat-label">Scored:</span>
-                    <span className="stat-value">{scoredCount}/{formSentences.length} sentences</span>
+                  <div className="sentence-text">
+                    Playing: ID {blockSentences[currentPlayingIndex].id}
                   </div>
-                  <div className="summary-stat">
-                    <span className="stat-label">Correct:</span>
-                    <span className="stat-value">{correctCount}/{scoredCount} ({percentage}%)</span>
+                  <div className="sentence-text">
+                    {blockSentences[currentPlayingIndex].text}
+                  </div>
+                  <div className="target-word">
+                    Target Word: {blockSentences[currentPlayingIndex].target}
                   </div>
                 </>
-              )
-              : <div className="no-scores">No sentences scored yet.</div>
-            }
-          </div>
-        </div>
-      </div>
-
-      {/* Summary */}
-      <div className="summary">
-        <div className="summary-main">
-          {percentage}% Correct ({correctCount} out of 25 words)
-        </div>
-      </div>
-
-      {/* Performance Graph */}
-      {allScored && !showResults && (
-        <div className="section">
-          <div className="section-title">Performance by Block</div>
-          <div className="graph-container">
-            <div className="graph-y-axis">
-              <div className="y-label">100%</div>
-              <div className="y-label">75%</div>
-              <div className="y-label">50%</div>
-              <div className="y-label">25%</div>
-              <div className="y-label">0%</div>
+              ) : (
+                <>
+                  <div className="sentence-text">Ready to play block {currentBlock + 1}</div>
+                  <div className="target-word">Target words: {targets}</div>
+                </>
+              )}
             </div>
-            <div className="graph-content">
-              {blockStats.map((stats, index) => (
-                <div key={index} className="graph-bar-container">
-                  <div className="graph-bar-wrapper">
-                    <div
-                      className="graph-bar"
-                      style={{ height: `${stats.percentage}%` }}
-                      title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
-                    >
-                      <span className="bar-label">{stats.percentage.toFixed(0)}%</span>
+          </div>
+
+          {/* Playback Controls */}
+          <div className="section">
+            <div className="section-title">Playback Controls</div>
+            <div className="control-buttons">
+              <button className="btn" onClick={previousBlock} disabled={isPlaying}>
+                ⏮ Previous Block
+              </button>
+              <button className="btn" onClick={playBlock} disabled={isPlaying}>
+                ▶ Play Block
+              </button>
+              <button className="btn btn-secondary" onClick={stopAudio} disabled={!isPlaying}>
+                ⏸ Stop
+              </button>
+              <button className="btn" onClick={nextBlock} disabled={isPlaying}>
+                Next Block ⏭
+              </button>
+            </div>
+            <div className="noise-control">
+              <label className="noise-toggle">
+                <input
+                  type="checkbox"
+                  checked={noiseEnabled}
+                  onChange={(e) => setNoiseEnabled(e.target.checked)}
+                  disabled={isPlaying}
+                />
+                <span>Add Background Noise</span>
+              </label>
+              {noiseEnabled && (
+                <div className="snr-control">
+                  <label className="snr-label">
+                    <span>SNR: {snr > 0 ? '+' : ''}{snr} dB</span>
+                    <input
+                      type="range"
+                      min="-10"
+                      max="20"
+                      step="1"
+                      value={snr}
+                      onChange={(e) => setSnr(parseInt(e.target.value))}
+                      disabled={isPlaying}
+                      className="snr-slider"
+                    />
+                    <div className="snr-range-labels">
+                      <span>-10 dB</span>
+                      <span>0 dB</span>
+                      <span>+20 dB</span>
                     </div>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Channel Configuration */}
+            <div className="channel-control">
+              <div className="section-subtitle">Channel Configuration</div>
+              <div className="channel-buttons">
+                <button
+                  className={`btn-channel ${channelConfig === 'speech-left' ? 'active' : ''}`}
+                  onClick={() => setChannelConfig('speech-left')}
+                  disabled={isPlaying || isCalibrationPlaying}
+                >
+                  Speech Left / Noise Right
+                </button>
+                <button
+                  className={`btn-channel ${channelConfig === 'speech-right' ? 'active' : ''}`}
+                  onClick={() => setChannelConfig('speech-right')}
+                  disabled={isPlaying || isCalibrationPlaying}
+                >
+                  Speech Right / Noise Left
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Scoring */}
+          <div className="section">
+            <div className="section-title">Score Block (after playback)</div>
+            <div className="scoring-container">
+              {showScoring ? (
+                <>
+                  <div className="scoring-title">Score each target word:</div>
+                  <div className="scoring-grid">
+                    {blockSentences.map(sentence => {
+                      const score = scores[currentForm][sentence.id];
+                      return (
+                        <div key={sentence.id} className="scoring-row">
+                          <div className="scoring-row-label">
+                            ID {sentence.id}: {sentence.target}
+                          </div>
+                          <button
+                            className="btn btn-success"
+                            onClick={() => scoreSentence(sentence.id, true)}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            className="btn btn-danger"
+                            onClick={() => scoreSentence(sentence.id, false)}
+                          >
+                            ✗
+                          </button>
+                          <div className={`score-status ${score === true ? 'correct' : score === false ? 'incorrect' : ''}`}>
+                            {score === undefined ? 'Not scored' : score ? '✓ Correct' : '✗ Incorrect'}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="graph-x-label">
-                    {BLOCK_SIZES[index]}<br />
-                    <span className="x-label-small">sentences</span>
+                </>
+              ) : (
+                <div className="empty-state">Play a block to begin scoring</div>
+              )}
+            </div>
+          </div>
+
+          {/* Results */}
+          <div className="section">
+            <div className="section-title">Form {currentForm} Results</div>
+            <div className="results-section">
+              <table className="results-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Sentence</th>
+                    <th>Target Word</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {formSentences.map(s => {
+                    const score = scores[currentForm][s.id];
+                    const scoreMark = score === undefined ? '-' : score ? '✓' : '✗';
+                    const scoreClass = score === undefined ? 'unscored' : score ? 'correct' : 'incorrect';
+                    return (
+                      <tr key={s.id} className={scoreClass}>
+                        <td className="id-cell">{s.id}</td>
+                        <td className="sentence-cell">{s.text}</td>
+                        <td className="target-cell">{s.target}</td>
+                        <td className="score-cell">{scoreMark}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div className="results-summary">
+                {scoredCount > 0
+                  ? (
+                    <>
+                      <div className="summary-stat">
+                        <span className="stat-label">Scored:</span>
+                        <span className="stat-value">{scoredCount}/{formSentences.length} sentences</span>
+                      </div>
+                      <div className="summary-stat">
+                        <span className="stat-label">Correct:</span>
+                        <span className="stat-value">{correctCount}/{scoredCount} ({percentage}%)</span>
+                      </div>
+                    </>
+                  )
+                  : <div className="no-scores">No sentences scored yet.</div>
+                }
+              </div>
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className="summary">
+            <div className="summary-main">
+              {percentage}% Correct ({correctCount} out of 25 words)
+            </div>
+          </div>
+
+          {/* Performance Graph */}
+          {allScored && !showResults && (
+            <div className="section">
+              <div className="section-title">Performance by Block</div>
+              <div className="graph-container">
+                <div className="graph-y-axis">
+                  <div className="y-label">100%</div>
+                  <div className="y-label">75%</div>
+                  <div className="y-label">50%</div>
+                  <div className="y-label">25%</div>
+                  <div className="y-label">0%</div>
+                </div>
+                <div className="graph-content">
+                  {blockStats.map((stats, index) => (
+                    <div key={index} className="graph-bar-container">
+                      <div className="graph-bar-wrapper">
+                        <div
+                          className="graph-bar"
+                          style={{ height: `${stats.percentage}%` }}
+                          title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
+                        >
+                          <span className="bar-label">{stats.percentage.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      <div className="graph-x-label">
+                        {BLOCK_SIZES[index]}<br />
+                        <span className="x-label-small">sentences</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="graph-x-title">Set Size</div>
+            </div>
+          )}
+
+        </>
+      )}
+
+      {/* Practice Mode View */}
+      {currentForm === 'P' && (
+        <div className="section">
+          <div className="section-title">Practice List</div>
+
+          {/* Noise Control for Practice */}
+          <div className="noise-control" style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+            <label className="noise-toggle">
+              <input
+                type="checkbox"
+                checked={noiseEnabled}
+                onChange={(e) => setNoiseEnabled(e.target.checked)}
+                disabled={isPlaying}
+              />
+              <span>Add Background Noise</span>
+            </label>
+            {noiseEnabled && (
+              <div className="snr-control">
+                <label className="snr-label">
+                  <span>SNR: {snr > 0 ? '+' : ''}{snr} dB</span>
+                  <input
+                    type="range"
+                    min="-10"
+                    max="20"
+                    step="1"
+                    value={snr}
+                    onChange={(e) => setSnr(parseInt(e.target.value))}
+                    disabled={isPlaying}
+                    className="snr-slider"
+                  />
+                  <div className="snr-range-labels">
+                    <span>-10 dB</span>
+                    <span>0 dB</span>
+                    <span>+20 dB</span>
+                  </div>
+                </label>
+              </div>
+            )}
+
+            {/* Channel Configuration for Practice */}
+            <div className="channel-control" style={{ marginTop: '15px' }}>
+              <div className="section-subtitle" style={{ fontSize: '0.9em', marginBottom: '10px' }}>Channel Configuration</div>
+              <div className="channel-buttons">
+                <button
+                  className={`btn-channel ${channelConfig === 'speech-left' ? 'active' : ''}`}
+                  onClick={() => setChannelConfig('speech-left')}
+                  disabled={isPlaying || isCalibrationPlaying}
+                >
+                  Speech Left / Noise Right
+                </button>
+                <button
+                  className={`btn-channel ${channelConfig === 'speech-right' ? 'active' : ''}`}
+                  onClick={() => setChannelConfig('speech-right')}
+                  disabled={isPlaying || isCalibrationPlaying}
+                >
+                  Speech Right / Noise Left
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="practice-list">
+            {formSentences.map((sentence) => {
+              const words = sentence.text.split(' ');
+              const sentenceScores = scores[currentForm][sentence.id] || [];
+              const isCurrentPlaying = isPlaying && currentPlayingIndex !== null && formSentences[currentPlayingIndex].id === sentence.id;
+
+              return (
+                <div key={sentence.id} className={`practice-row ${isCurrentPlaying ? 'playing' : ''}`}>
+                  <button
+                    className="btn btn-sm btn-play"
+                    onClick={() => playSingleSentence(sentence)}
+                    disabled={isPlaying}
+                  >
+                    ▶
+                  </button>
+                  <div className="sentence-display">
+                    {words.map((word, index) => {
+                      const isCorrect = sentenceScores[index] !== false;
+                      const isMarkedIncorrect = sentenceScores[index] === false;
+
+                      return (
+                        <span
+                          key={index}
+                          className={`practice-word ${isMarkedIncorrect ? 'incorrect' : 'correct'}`}
+                          onClick={() => toggleWordScore(sentence.id, index, isMarkedIncorrect)}
+                          title="Click to toggle score"
+                          style={{
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            margin: '0 2px',
+                            borderRadius: '4px',
+                            backgroundColor: isMarkedIncorrect ? '#ffebee' : 'transparent',
+                            color: isMarkedIncorrect ? '#c0392b' : 'inherit',
+                            textDecoration: isMarkedIncorrect ? 'line-through' : 'none',
+                            borderBottom: isMarkedIncorrect ? 'none' : '2px solid transparent'
+                          }}
+                        >
+                          {word}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
-          <div className="graph-x-title">Set Size</div>
         </div>
       )}
 

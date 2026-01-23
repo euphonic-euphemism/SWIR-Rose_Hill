@@ -1,52 +1,332 @@
 [
-  { "id": "01", "text": "The dog ran down the street.", "target": "street", "list": "A" },
-  { "id": "02", "text": "She put the cake on the plate.", "target": "plate", "list": "A" },
-  { "id": "03", "text": "The sun shines on the grass.", "target": "grass", "list": "A" },
-  { "id": "04", "text": "He plays with the red ball.", "target": "ball", "list": "A" },
-  { "id": "05", "text": "The cat sat on the bed.", "target": "bed", "list": "A" },
-  { "id": "06", "text": "Please close the front door.", "target": "door", "list": "A" },
-  { "id": "07", "text": "The milk is in the glass.", "target": "glass", "list": "A" },
-  { "id": "08", "text": "They walked to the big park.", "target": "park", "list": "A" },
-  { "id": "09", "text": "The bird flew to the tree.", "target": "tree", "list": "A" },
-  { "id": "10", "text": "She washed her hands with soap.", "target": "soap", "list": "A" },
-  { "id": "11", "text": "The key is in the lock.", "target": "lock", "list": "A" },
-  { "id": "12", "text": "He read the news in the paper.", "target": "paper", "list": "A" },
-  { "id": "13", "text": "The train went off the track.", "target": "track", "list": "A" },
-  { "id": "14", "text": "The fish swam in the lake.", "target": "lake", "list": "A" },
-  { "id": "15", "text": "She wrote a note with a pen.", "target": "pen", "list": "A" },
-  { "id": "16", "text": "The soup is in the bowl.", "target": "bowl", "list": "A" },
-  { "id": "17", "text": "He cut the wood with a saw.", "target": "saw", "list": "A" },
-  { "id": "18", "text": "The rain fell on the roof.", "target": "roof", "list": "A" },
-  { "id": "19", "text": "She hurt her knee on the step.", "target": "step", "list": "A" },
-  { "id": "20", "text": "The boat sailed on the sea.", "target": "sea", "list": "A" },
-  { "id": "21", "text": "He threw the trash in the bin.", "target": "bin", "list": "A" },
-  { "id": "22", "text": "The light hangs from the top.", "target": "top", "list": "A" },
-  { "id": "23", "text": "They sat on the cold ground.", "target": "ground", "list": "A" },
-  { "id": "24", "text": "The ice melted in the heat.", "target": "heat", "list": "A" },
-  { "id": "25", "text": "She brushed her long hair.", "target": "hair", "list": "A" },
-  { "id": "26", "text": "The baby cried for his mom.", "target": "mom", "list": "B" },
-  { "id": "27", "text": "He wiped his feet on the mat.", "target": "mat", "list": "B" },
-  { "id": "28", "text": "The car drove down the road.", "target": "road", "list": "B" },
-  { "id": "29", "text": "She cooked the egg in the pan.", "target": "pan", "list": "B" },
-  { "id": "30", "text": "The leaf fell from the branch.", "target": "branch", "list": "B" },
-  { "id": "31", "text": "He kicked the stone with his shoe.", "target": "shoe", "list": "B" },
-  { "id": "32", "text": "The smoke went up the pipe.", "target": "pipe", "list": "B" },
-  { "id": "33", "text": "They built a fire with wood.", "target": "wood", "list": "B" },
-  { "id": "34", "text": "The mouse ran in the hole.", "target": "hole", "list": "B" },
-  { "id": "35", "text": "She put the ring on her hand.", "target": "hand", "list": "B" },
-  { "id": "36", "text": "The star shines in the sky.", "target": "sky", "list": "B" },
-  { "id": "37", "text": "He paid the bill with cash.", "target": "cash", "list": "B" },
-  { "id": "38", "text": "The horse stood in the barn.", "target": "barn", "list": "B" },
-  { "id": "39", "text": "She drank the juice from the cup.", "target": "cup", "list": "B" },
-  { "id": "40", "text": "The map is on the wall.", "target": "wall", "list": "B" },
-  { "id": "41", "text": "He hit the nail with a tool.", "target": "tool", "list": "B" },
-  { "id": "42", "text": "The sheep eat the green grass.", "target": "grass", "list": "B" },
-  { "id": "43", "text": "She took a bite of the fruit.", "target": "fruit", "list": "B" },
-  { "id": "44", "text": "The wheels turn on the bus.", "target": "bus", "list": "B" },
-  { "id": "45", "text": "He wore a hat on his head.", "target": "head", "list": "B" },
-  { "id": "46", "text": "The bread is in the box.", "target": "box", "list": "B" },
-  { "id": "47", "text": "She swept the dust with a broom.", "target": "broom", "list": "B" },
-  { "id": "48", "text": "The clock hands show the time.", "target": "time", "list": "B" },
-  { "id": "49", "text": "He dug a hole in the dirt.", "target": "dirt", "list": "B" },
-  { "id": "50", "text": "The boy played with a toy.", "target": "toy", "list": "B" }
+  {
+    "id": "01",
+    "text": "The dog ran down the street.",
+    "target": "street",
+    "list": "A"
+  },
+  {
+    "id": "02",
+    "text": "She put the cake on the plate.",
+    "target": "plate",
+    "list": "A"
+  },
+  {
+    "id": "03",
+    "text": "The sun shines on the grass.",
+    "target": "grass",
+    "list": "A"
+  },
+  {
+    "id": "04",
+    "text": "He plays with the red ball.",
+    "target": "ball",
+    "list": "A"
+  },
+  {
+    "id": "05",
+    "text": "The cat sat on the bed.",
+    "target": "bed",
+    "list": "A"
+  },
+  {
+    "id": "06",
+    "text": "Please close the front door.",
+    "target": "door",
+    "list": "A"
+  },
+  {
+    "id": "07",
+    "text": "The milk is in the glass.",
+    "target": "glass",
+    "list": "A"
+  },
+  {
+    "id": "08",
+    "text": "They walked to the big park.",
+    "target": "park",
+    "list": "A"
+  },
+  {
+    "id": "09",
+    "text": "The bird flew to the tree.",
+    "target": "tree",
+    "list": "A"
+  },
+  {
+    "id": "10",
+    "text": "She washed her hands with soap.",
+    "target": "soap",
+    "list": "A"
+  },
+  {
+    "id": "11",
+    "text": "The key is in the lock.",
+    "target": "lock",
+    "list": "A"
+  },
+  {
+    "id": "12",
+    "text": "He read the news in the paper.",
+    "target": "paper",
+    "list": "A"
+  },
+  {
+    "id": "13",
+    "text": "The train went off the track.",
+    "target": "track",
+    "list": "A"
+  },
+  {
+    "id": "14",
+    "text": "The fish swam in the lake.",
+    "target": "lake",
+    "list": "A"
+  },
+  {
+    "id": "15",
+    "text": "She wrote a note with a pen.",
+    "target": "pen",
+    "list": "A"
+  },
+  {
+    "id": "16",
+    "text": "The soup is in the bowl.",
+    "target": "bowl",
+    "list": "A"
+  },
+  {
+    "id": "17",
+    "text": "He cut the wood with a saw.",
+    "target": "saw",
+    "list": "A"
+  },
+  {
+    "id": "18",
+    "text": "The rain fell on the roof.",
+    "target": "roof",
+    "list": "A"
+  },
+  {
+    "id": "19",
+    "text": "She hurt her knee on the step.",
+    "target": "step",
+    "list": "A"
+  },
+  {
+    "id": "20",
+    "text": "The boat sailed on the sea.",
+    "target": "sea",
+    "list": "A"
+  },
+  {
+    "id": "21",
+    "text": "He threw the trash in the bin.",
+    "target": "bin",
+    "list": "A"
+  },
+  {
+    "id": "22",
+    "text": "The light hangs from the top.",
+    "target": "top",
+    "list": "A"
+  },
+  {
+    "id": "23",
+    "text": "They sat on the cold ground.",
+    "target": "ground",
+    "list": "A"
+  },
+  {
+    "id": "24",
+    "text": "The ice melted in the heat.",
+    "target": "heat",
+    "list": "A"
+  },
+  {
+    "id": "25",
+    "text": "She brushed her long hair.",
+    "target": "hair",
+    "list": "A"
+  },
+  {
+    "id": "26",
+    "text": "The baby cried for his mom.",
+    "target": "mom",
+    "list": "B"
+  },
+  {
+    "id": "27",
+    "text": "He wiped his feet on the mat.",
+    "target": "mat",
+    "list": "B"
+  },
+  {
+    "id": "28",
+    "text": "The car drove down the road.",
+    "target": "road",
+    "list": "B"
+  },
+  {
+    "id": "29",
+    "text": "She cooked the egg in the pan.",
+    "target": "pan",
+    "list": "B"
+  },
+  {
+    "id": "30",
+    "text": "The leaf fell from the branch.",
+    "target": "branch",
+    "list": "B"
+  },
+  {
+    "id": "31",
+    "text": "He kicked the stone with his shoe.",
+    "target": "shoe",
+    "list": "B"
+  },
+  {
+    "id": "32",
+    "text": "The smoke went up the pipe.",
+    "target": "pipe",
+    "list": "B"
+  },
+  {
+    "id": "33",
+    "text": "They built a fire with wood.",
+    "target": "wood",
+    "list": "B"
+  },
+  {
+    "id": "34",
+    "text": "The mouse ran in the hole.",
+    "target": "hole",
+    "list": "B"
+  },
+  {
+    "id": "35",
+    "text": "She put the ring on her hand.",
+    "target": "hand",
+    "list": "B"
+  },
+  {
+    "id": "36",
+    "text": "The star shines in the sky.",
+    "target": "sky",
+    "list": "B"
+  },
+  {
+    "id": "37",
+    "text": "He paid the bill with cash.",
+    "target": "cash",
+    "list": "B"
+  },
+  {
+    "id": "38",
+    "text": "The horse stood in the barn.",
+    "target": "barn",
+    "list": "B"
+  },
+  {
+    "id": "39",
+    "text": "She drank the juice from the cup.",
+    "target": "cup",
+    "list": "B"
+  },
+  {
+    "id": "40",
+    "text": "The map is on the wall.",
+    "target": "wall",
+    "list": "B"
+  },
+  {
+    "id": "41",
+    "text": "He hit the nail with a tool.",
+    "target": "tool",
+    "list": "B"
+  },
+  {
+    "id": "42",
+    "text": "The sheep eat the green grass.",
+    "target": "grass",
+    "list": "B"
+  },
+  {
+    "id": "43",
+    "text": "She took a bite of the fruit.",
+    "target": "fruit",
+    "list": "B"
+  },
+  {
+    "id": "44",
+    "text": "The wheels turn on the bus.",
+    "target": "bus",
+    "list": "B"
+  },
+  {
+    "id": "45",
+    "text": "He wore a hat on his head.",
+    "target": "head",
+    "list": "B"
+  },
+  {
+    "id": "46",
+    "text": "The bread is in the box.",
+    "target": "box",
+    "list": "B"
+  },
+  {
+    "id": "47",
+    "text": "She swept the dust with a broom.",
+    "target": "broom",
+    "list": "B"
+  },
+  {
+    "id": "48",
+    "text": "The clock hands show the time.",
+    "target": "time",
+    "list": "B"
+  },
+  {
+    "id": "49",
+    "text": "He dug a hole in the dirt.",
+    "target": "dirt",
+    "list": "B"
+  },
+  {
+    "id": "50",
+    "text": "The boy played with a toy.",
+    "target": "toy",
+    "list": "B"
+  },
+  {
+    "id": "p01",
+    "text": "The sun rises in the east.",
+    "target": "east",
+    "list": "P"
+  },
+  {
+    "id": "p02",
+    "text": "Most cats like to sleep all day.",
+    "target": "day",
+    "list": "P"
+  },
+  {
+    "id": "p03",
+    "text": "A red car drove down the street.",
+    "target": "street",
+    "list": "P"
+  },
+  {
+    "id": "p04",
+    "text": "We cook dinner at six o'clock.",
+    "target": "clock",
+    "list": "P"
+  },
+  {
+    "id": "p05",
+    "text": "Good shoes help your feet hurt less.",
+    "target": "less",
+    "list": "P"
+  }
 ]
