@@ -82,4 +82,4 @@ Automated builds are configured in `.github/workflows/build.yml`.
 MIT License. See [LICENSE](LICENSE) for details.
 
 ## Author
-Mark Shaver <mark.shaver@hearinglife.com>
+Mark Shaver <mark.shaver@posteo.net>
