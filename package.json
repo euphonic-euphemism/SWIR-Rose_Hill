@@ -1,6 +1,6 @@
 {
   "name": "swir-audiometry-app",
-  "version": "1.0.10",
+  "version": "1.0.13",
   "description": "Speech Audiometry Scoring Application",
   "main": "electron/main.js",
   "scripts": {
