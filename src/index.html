@@ -1,11 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+  <script>
+    // Immediate fallback polyfill
+    window.global = window;
+
+    // Visual Error Logger
+    window.onerror = function (message, source, lineno, colno, error) {
+      var div = document.createElement('div');
+      div.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:red;color:white;padding:20px;z-index:9999;font-family:monospace;white-space:pre-wrap;';
+      div.innerText = 'Runtime Error:\n' + message + '\nAt: ' + source + ':' + lineno;
+      document.body.appendChild(div);
+      console.error(error);
+    };
+  </script>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Speech Audiometry Scoring System</title>
 </head>
+
 <body>
   <div id="root"></div>
 </body>
+
 </html>

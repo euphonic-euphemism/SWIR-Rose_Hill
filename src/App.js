@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import sentencesData from '../sentences.json';
 
-const { remote } = window.require ? window.require('electron') : {};
-const audioPath = remote ? remote.getGlobal('audioPath') : 'audio_output';
+// Access the preloaded API, with a fallback for running in a normal browser
+const audioBaseUrl = window.electronAPI ? window.electronAPI.getAudioBaseUrl() : './audio_output';
 
 const BLOCK_SIZES = [3, 4, 5, 6, 7];
 
@@ -19,10 +19,10 @@ function App() {
   const [showScoring, setShowScoring] = useState(false);
   const [isCalibrationPlaying, setIsCalibrationPlaying] = useState(false);
   const [noiseEnabled, setNoiseEnabled] = useState(false);
-  const [snr, setSnr] = useState(5); // SNR in dB
+  const [snr, setSnr] = useState(15); // SNR in dB
   const [channelConfig, setChannelConfig] = useState('speech-left'); // 'speech-left' or 'speech-right'
   const [showResults, setShowResults] = useState(false);
-  
+
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
   const speechPannerRef = useRef(null);
@@ -31,18 +31,22 @@ function App() {
   const noiseRef = useRef(null);
   const blockSentencesRef = useRef([]);
 
+  // Logic Control Refs
+  const isPlayingRef = useRef(false);
+  const currentCancelRef = useRef(null);
+
   // Initialize Web Audio API for stereo control
   useEffect(() => {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     audioContextRef.current = new AudioContext();
-    
+
     // Create panners for speech and noise
     speechPannerRef.current = audioContextRef.current.createStereoPanner();
     noisePannerRef.current = audioContextRef.current.createStereoPanner();
-    
+
     speechPannerRef.current.connect(audioContextRef.current.destination);
     noisePannerRef.current.connect(audioContextRef.current.destination);
-    
+
     return () => {
       if (audioContextRef.current) {
         audioContextRef.current.close();
@@ -63,49 +67,67 @@ function App() {
     }
   }, [channelConfig]);
 
-  // Handle continuous background noise
+  // 1. Initialize Noise Player (Only runs when Enabled toggles)
   useEffect(() => {
     if (noiseEnabled && audioContextRef.current && noisePannerRef.current) {
-      // Resume audio context if suspended
       if (audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume();
       }
-      
-      // Start continuous noise
-      const noise = new Audio(`${audioPath}/babble_noise.wav`);
+
+      const noise = new Audio(`${audioBaseUrl}/babble_noise.wav`);
       noise.loop = true;
       noise.crossOrigin = 'anonymous';
-      
+
       const source = audioContextRef.current.createMediaElementSource(noise);
       const gainNode = audioContextRef.current.createGain();
-      
-      // Calculate noise volume based on SNR (in dB)
-      const noiseVolume = Math.pow(10, -snr / 20);
-      gainNode.gain.value = Math.min(1.0, Math.max(0, noiseVolume));
-      
+
+      // Initial volume setting will be handled by the second effect, but safer to start muted
+      gainNode.gain.value = 0;
+
       source.connect(gainNode);
       gainNode.connect(noisePannerRef.current);
-      
+
       noiseRef.current = { audio: noise, source, gainNode };
       noise.play().catch(err => console.warn('Noise playback failed:', err));
-    } else {
-      // Stop noise when disabled
-      if (noiseRef.current) {
-        noiseRef.current.audio.pause();
-        noiseRef.current.audio.currentTime = 0;
-        noiseRef.current = null;
-      }
     }
 
-    // Cleanup on unmount or when dependencies change
     return () => {
+      // Cleanup when disabled
+      // Cleanup when disabled
       if (noiseRef.current) {
-        noiseRef.current.audio.pause();
-        noiseRef.current.audio.currentTime = 0;
+        if (noiseRef.current.audio) {
+          noiseRef.current.audio.pause();
+          noiseRef.current.audio.src = '';
+          noiseRef.current.audio.load();
+        }
+        if (noiseRef.current.source) {
+          try { noiseRef.current.source.disconnect(); } catch (e) { }
+        }
         noiseRef.current = null;
       }
     };
-  }, [noiseEnabled, snr]);
+  }, [noiseEnabled]);
+
+  // 2. Adjust Volume Real-time (Runs when SNR or Enabled changes)
+  useEffect(() => {
+    if (noiseRef.current && noiseRef.current.gainNode) {
+      // Calibration: Babble is ~1.5dB quieter than speech av (-23dB vs -21.5dB).
+      // We apply +1.5dB to equalize them at 0 SNR.
+      const BABBLE_OFFSET_DB = 1.5;
+
+      // Formula: We want Noise to be `SNR` dB ABOVE/BELOW Speech.
+      // Since Speech is 0dB (Reference), Noise should be -SNR.
+      // Then apply offset.
+      const targetDb = -snr + BABBLE_OFFSET_DB;
+
+      // Convert dB to Gain
+      const gain = Math.pow(10, targetDb / 20);
+
+      // Smooth transition
+      const currentTime = audioContextRef.current.currentTime;
+      noiseRef.current.gainNode.gain.setTargetAtTime(gain, currentTime, 0.1);
+    }
+  }, [snr, noiseEnabled]);
 
   const formSentences = sentencesData.filter(s => s.list === currentForm);
 
@@ -130,77 +152,77 @@ function App() {
     const { start, end } = getBlockRange(blockNum);
     const blockSentences = formSentences.slice(start, end);
     const formScores = scores[currentForm];
-    
+
     let correct = 0;
     let total = 0;
-    
+
     blockSentences.forEach(sentence => {
       if (formScores[sentence.id] !== undefined) {
         total++;
         if (formScores[sentence.id]) correct++;
       }
     });
-    
+
     return { correct, total, percentage: total > 0 ? (correct / total * 100) : 0 };
   };
-  
+
   const getFormBlockStats = (formName) => {
     const formSents = sentencesData.filter(s => s.list === formName);
-    
+
     // Safety check
     if (!formSents || formSents.length === 0) {
       return BLOCK_SIZES.map(() => ({ correct: 0, total: 0, percentage: 0 }));
     }
-    
+
     const formScores = scores[formName] || {};
-    
+
     return BLOCK_SIZES.map((size, blockNum) => {
       const { start, end } = getBlockRange(blockNum);
       const blockSentences = formSents.slice(start, end);
-      
+
       let correct = 0;
       let total = 0;
-      
+
       blockSentences.forEach(sentence => {
         if (sentence && formScores[sentence.id] !== undefined) {
           total++;
           if (formScores[sentence.id]) correct++;
         }
       });
-      
+
       return { correct, total, percentage: total > 0 ? (correct / total * 100) : 0 };
     });
   };
 
   const playCalibration = async () => {
     if (!audioContextRef.current) return;
-    
+
     setIsCalibrationPlaying(true);
-    
+
     try {
       // Resume audio context if suspended
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
-      
+
       // Play left channel first
       await playCalibrationChannel(-1, 'Left');
       await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second pause
-      
+
       // Then play right channel
       await playCalibrationChannel(1, 'Right');
-      
+
       setIsCalibrationPlaying(false);
     } catch (err) {
       alert('Error playing calibration tone: ' + err.message);
       setIsCalibrationPlaying(false);
     }
   };
-  
+
   const playCalibrationLeft = async () => {
     if (!audioContextRef.current) return;
     setIsCalibrationPlaying(true);
-    
+
     try {
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
@@ -212,11 +234,11 @@ function App() {
       setIsCalibrationPlaying(false);
     }
   };
-  
+
   const playCalibrationRight = async () => {
     if (!audioContextRef.current) return;
     setIsCalibrationPlaying(true);
-    
+
     try {
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
@@ -228,22 +250,22 @@ function App() {
       setIsCalibrationPlaying(false);
     }
   };
-  
+
   const playCalibrationChannel = (panValue, channelName) => {
     return new Promise((resolve, reject) => {
-      const audio = new Audio(`${audioPath}/calibration_1khz_neg20db.wav`);
+      const audio = new Audio(`${audioBaseUrl}/calibration_1khz_neg20db.wav`);
       audio.crossOrigin = 'anonymous';
-      
+
       const source = audioContextRef.current.createMediaElementSource(audio);
       const panner = audioContextRef.current.createStereoPanner();
       panner.pan.value = panValue;
-      
+
       source.connect(panner);
       panner.connect(audioContextRef.current.destination);
-      
+
       audio.onended = () => resolve();
       audio.onerror = () => reject(new Error(`Calibration ${channelName} channel failed`));
-      
+
       calibrationRef.current = { audio, source, panner };
       audio.play().catch(reject);
     });
@@ -260,64 +282,160 @@ function App() {
   const playBlock = async () => {
     const blockSentences = getCurrentBlockSentences();
     blockSentencesRef.current = blockSentences;
-    setIsPlaying(true);
-    setShowScoring(false);
 
-    for (let i = 0; i < blockSentences.length; i++) {
-      const sentence = blockSentences[i];
-      setCurrentPlayingIndex(i);
-      
-      const audioFilePath = `${audioPath}/Form ${currentForm}/wav/swir_${sentence.id}.wav`;
-      
-      try {
-        await playAudioFile(audioFilePath);
-        // 3-second interstimulus interval
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      } catch (err) {
+    setIsPlaying(true);
+    isPlayingRef.current = true;
+    setShowScoring(false);
+    console.log('[App] Playback started');
+
+    let completed = false;
+
+    try {
+      for (let i = 0; i < blockSentences.length; i++) {
+        console.log(`[App] Loop iteration ${i}, playing sentence ${blockSentences[i].id}`);
+        // Check cancellation before start
+        if (!isPlayingRef.current) throw new Error('Cancelled');
+
+        const sentence = blockSentences[i];
+        setCurrentPlayingIndex(i);
+
+        const audioFilePath = `${audioBaseUrl}/Form ${currentForm}/wav/swir_${sentence.id}.wav`;
+
+        // Play Audio with Cancellation Support
+        await new Promise((resolve, reject) => {
+          // Define cancellation for this step
+          currentCancelRef.current = () => {
+            reject(new Error('Cancelled'));
+          };
+
+          playAudioFile(audioFilePath)
+            .then(resolve)
+            .catch((err) => {
+              // If we manually cancelled, the promise might reject naturally from stop() logic if implemented there,
+              // or we reject here.
+              reject(err);
+            });
+        });
+
+        // Clear cancel ref after successful play
+        currentCancelRef.current = null;
+
+        // Check cancellation after play
+        if (!isPlayingRef.current) throw new Error('Cancelled');
+
+        console.log('[App] Waiting 3s...');
+        // 3-second interstimulus interval (Cancellable)
+        await new Promise((resolve, reject) => {
+          currentCancelRef.current = () => reject(new Error('Cancelled'));
+          setTimeout(() => {
+            resolve();
+            currentCancelRef.current = null;
+          }, 3000);
+        });
+        currentCancelRef.current = null;
+      }
+      completed = true;
+    } catch (err) {
+      console.error('[App] Playback Error:', err);
+      if (err.message === 'Cancelled') {
+        console.log('[App] Playback sequence cancelled');
+      } else {
         alert(`Error playing audio: ${err.message}`);
-        setIsPlaying(false);
-        setCurrentPlayingIndex(null);
-        return;
+      }
+    } finally {
+      console.log('[App] Playback finally block entered');
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setCurrentPlayingIndex(null);
+      currentCancelRef.current = null;
+      if (completed) {
+        setShowScoring(true);
       }
     }
-
-    setIsPlaying(false);
-    setCurrentPlayingIndex(null);
-    setShowScoring(true);
   };
 
-  const playAudioFile = (path) => {
+  const playAudioFile = async (path) => {
+    // Ensure context exists
+    if (!audioContextRef.current || !speechPannerRef.current) {
+      throw new Error('Audio context not initialized');
+    }
+
+    // Resume audio context if suspended (Must await this!)
+    if (audioContextRef.current.state === 'suspended') {
+      console.log('[App] Resuming AudioContext...');
+      await audioContextRef.current.resume();
+      console.log('[App] AudioContext resumed');
+    }
+
     return new Promise((resolve, reject) => {
-      if (!audioContextRef.current || !speechPannerRef.current) {
-        reject(new Error('Audio context not initialized'));
-        return;
-      }
-      
-      // Resume audio context if suspended
-      if (audioContextRef.current.state === 'suspended') {
-        audioContextRef.current.resume();
-      }
-      
       const audio = new Audio(path);
       audio.crossOrigin = 'anonymous';
-      
-      const source = audioContextRef.current.createMediaElementSource(audio);
-      source.connect(speechPannerRef.current);
-      
-      audioRef.current = { audio, source };
-      
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error('Audio file not found or cannot be played'));
-      
-      audio.play().catch(reject);
+
+      let source = null;
+
+      try {
+        source = audioContextRef.current.createMediaElementSource(audio);
+        source.connect(speechPannerRef.current);
+        audioRef.current = { audio, source };
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      // Safety timeout: forced resolve/reject if audio takes too long (e.g. 10s)
+      const safetyTimeout = setTimeout(() => {
+        console.warn('[App] Audio safety timeout triggered', path);
+        resolve();
+      }, 10000);
+
+      // Cleanup function
+      const cleanup = () => {
+        clearTimeout(safetyTimeout);
+        if (source) {
+          try { source.disconnect(); } catch (e) { /* ignore */ }
+        }
+        // Optional: Release audio memory
+        audio.src = '';
+        audio.load();
+      };
+
+      audio.onended = () => {
+        cleanup();
+        resolve();
+      };
+      audio.onerror = (e) => {
+        cleanup();
+        console.error('[App] Audio error event:', e);
+        reject(new Error('Audio file not found or cannot be played'));
+      };
+
+      console.log('[App] Calling audio.play()', path);
+      audio.play().catch(err => {
+        cleanup();
+        console.error('[App] audio.play() failed:', err);
+        reject(err);
+      });
     });
   };
 
   const stopAudio = () => {
+    console.log('[App] Stop requested');
+    // 1. Mark as not playing to stop loop
+    isPlayingRef.current = false;
+
+    // 2. Trigger cancellation of current async wait
+    if (currentCancelRef.current) {
+      currentCancelRef.current();
+      currentCancelRef.current = null;
+    }
+
+    // 3. Stop actual audio hardware
     if (audioRef.current && audioRef.current.audio) {
       audioRef.current.audio.pause();
       audioRef.current.audio.currentTime = 0;
     }
+
+    // 4. Update UI State immediately (finally block will also run)
     setIsPlaying(false);
     setCurrentPlayingIndex(null);
   };
@@ -365,33 +483,33 @@ function App() {
     const safePatientName = patientName.replace(/[^a-zA-Z0-9]/g, '_') || 'unnamed';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const filename = `audiometry_results_${safePatientName}_${timestamp}.txt`;
-    
+
     let content = `Speech Audiometry Results\n`;
     content += '='.repeat(80) + '\n';
     content += `Patient Name: ${patientName}\n`;
     content += `Test Date: ${testDate}\n`;
     content += `Form: ${currentForm}\n`;
     content += '='.repeat(80) + '\n\n';
-    
+
     let correctCount = 0;
     let scoredCount = 0;
-    
+
     formSentences.forEach(sentence => {
       const score = scores[currentForm][sentence.id];
       const result = score === undefined ? 'NOT SCORED' : (score ? 'CORRECT' : 'INCORRECT');
-      
+
       if (score !== undefined) {
         scoredCount++;
         if (score) correctCount++;
       }
-      
+
       content += `ID: ${sentence.id}\n`;
       content += `Sentence: ${sentence.text}\n`;
       content += `Target: ${sentence.target}\n`;
       content += `Result: ${result}\n`;
       content += '-'.repeat(80) + '\n';
     });
-    
+
     content += '\nSUMMARY\n';
     content += '='.repeat(80) + '\n';
     if (scoredCount > 0) {
@@ -401,7 +519,7 @@ function App() {
     } else {
       content += 'No sentences scored.\n';
     }
-    
+
     // Create and download file
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -410,27 +528,113 @@ function App() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-    
+
     alert(`Results exported to: ${filename}`);
   };
 
   const generatePdf = () => {
+    // Generate PDF with Graph
     const doc = new jsPDF();
-    const tableData = formSentences.map(s => {
-      const score = scores[currentForm][s.id];
-      const scoreMark = score === undefined ? '-' : score ? '✓' : '✗';
-      return [s.id, s.text, s.target, scoreMark];
-    });
 
-    doc.autoTable({
-      head: [['ID', 'Sentence', 'Target Word', 'Score']],
-      body: tableData,
-      startY: 50,
-    });
-
+    doc.setFontSize(18);
     doc.text('Speech Audiometry Results', 14, 20);
+
+    doc.setFontSize(12);
     doc.text(`Patient Name: ${patientName}`, 14, 30);
     doc.text(`Test Date: ${testDate}`, 14, 40);
+    doc.text(`Form: ${currentForm}`, 14, 50);
+
+    // Draw Graph instead of Table
+
+    const startX = 20;
+    const startY = 70;
+    const graphWidth = 160;
+    const graphHeight = 100;
+    const maxVal = 100;
+
+    // Draw Title
+    doc.setFontSize(14);
+    doc.text(`Performance Comparison (Combined)`, 14, 60);
+
+    // Draw Axis
+    doc.setLineWidth(0.5);
+    doc.line(startX, startY + graphHeight, startX + graphWidth, startY + graphHeight); // X Axis
+    doc.line(startX, startY, startX, startY + graphHeight); // Y Axis
+
+    // Draw Y Axis Labels and Grid lines
+    doc.setFontSize(10);
+    [0, 25, 50, 75, 100].forEach(percent => {
+      const y = startY + graphHeight - (percent / 100 * graphHeight);
+      doc.text(`${percent}%`, startX - 2, y + 3, { align: 'right' });
+      doc.setDrawColor(200);
+      doc.line(startX, y, startX + graphWidth, y); // Grid line
+    });
+
+    doc.setDrawColor(0); // Reset to black
+
+    // Draw Legend
+    doc.setFontSize(10);
+    // Legend A
+    doc.setFillColor(102, 126, 234); // #667eea (Purple)
+    doc.rect(startX + graphWidth - 60, startY - 10, 4, 4, 'F');
+    doc.text('Form A', startX + graphWidth - 54, startY - 7);
+
+    // Legend B
+    doc.setFillColor(255, 159, 67); // #ff9f43 (Orange)
+    doc.rect(startX + graphWidth - 30, startY - 10, 4, 4, 'F');
+    doc.text('Form B', startX + graphWidth - 24, startY - 7);
+
+    // Draw Bars
+    const barWidth = 15;
+
+    // Calculate stats for BOTH forms
+    const statsA = getFormBlockStats('A');
+    const statsB = getFormBlockStats('B');
+
+    BLOCK_SIZES.forEach((size, i) => {
+      // Calculate position
+      const sectionWidth = graphWidth / BLOCK_SIZES.length;
+      const groupCenterX = startX + (sectionWidth * i) + (sectionWidth / 2);
+
+      const xA = groupCenterX - barWidth - 1; // Shift left
+      const xB = groupCenterX + 1; // Shift right
+
+      // Draw Bar A
+      const sA = statsA[i];
+      const hA = (sA.percentage / 100) * graphHeight;
+      const yA = startY + graphHeight - hA;
+
+      doc.setFillColor(102, 126, 234); // Purple
+      if (sA.percentage > 0) {
+        doc.rect(xA, yA, barWidth, hA, 'F');
+      }
+
+      // Draw Bar B
+      const sB = statsB[i];
+      const hB = (sB.percentage / 100) * graphHeight;
+      const yB = startY + graphHeight - hB;
+
+      doc.setFillColor(255, 159, 67); // Orange
+      if (sB.percentage > 0) {
+        doc.rect(xB, yB, barWidth, hB, 'F');
+      }
+
+      // Draw Labels (only if > 0)
+      doc.setTextColor(0);
+      doc.setFontSize(8);
+      if (sA.percentage > 0) doc.text(`${sA.percentage.toFixed(0)}%`, xA + barWidth / 2, yA - 2, { align: 'center' });
+      if (sB.percentage > 0) doc.text(`${sB.percentage.toFixed(0)}%`, xB + barWidth / 2, yB - 2, { align: 'center' });
+
+      // X Label
+      doc.setFontSize(10);
+      doc.text(`${size}`, groupCenterX, startY + graphHeight + 5, { align: 'center' });
+      doc.setFontSize(8);
+      doc.text(`sentences`, groupCenterX, startY + graphHeight + 9, { align: 'center' });
+      doc.setFontSize(10);
+    });
+
+    // X Axis Title
+    doc.text('Set Size', startX + graphWidth / 2, startY + graphHeight + 15, { align: 'center' });
 
     const safePatientName = patientName.replace(/[^a-zA-Z0-9]/g, '_') || 'unnamed';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -446,7 +650,7 @@ function App() {
   const scoredCount = Object.keys(formScores).length;
   const correctCount = Object.values(formScores).filter(Boolean).length;
   const percentage = scoredCount > 0 ? (correctCount / scoredCount * 100).toFixed(1) : 0;
-  
+
   // Calculate block statistics for graph
   const blockStats = BLOCK_SIZES.map((size, index) => getBlockStats(index));
   const allScored = scoredCount === 25;
@@ -569,9 +773,9 @@ function App() {
         </div>
         <div className="noise-control">
           <label className="noise-toggle">
-            <input 
-              type="checkbox" 
-              checked={noiseEnabled} 
+            <input
+              type="checkbox"
+              checked={noiseEnabled}
               onChange={(e) => setNoiseEnabled(e.target.checked)}
               disabled={isPlaying}
             />
@@ -581,11 +785,11 @@ function App() {
             <div className="snr-control">
               <label className="snr-label">
                 <span>SNR: {snr > 0 ? '+' : ''}{snr} dB</span>
-                <input 
-                  type="range" 
-                  min="-10" 
-                  max="20" 
-                  step="1" 
+                <input
+                  type="range"
+                  min="-10"
+                  max="20"
+                  step="1"
                   value={snr}
                   onChange={(e) => setSnr(parseInt(e.target.value))}
                   disabled={isPlaying}
@@ -600,19 +804,19 @@ function App() {
             </div>
           )}
         </div>
-        
+
         {/* Channel Configuration */}
         <div className="channel-control">
           <div className="section-subtitle">Channel Configuration</div>
           <div className="channel-buttons">
-            <button 
+            <button
               className={`btn-channel ${channelConfig === 'speech-left' ? 'active' : ''}`}
               onClick={() => setChannelConfig('speech-left')}
               disabled={isPlaying || isCalibrationPlaying}
             >
               Speech Left / Noise Right
             </button>
-            <button 
+            <button
               className={`btn-channel ${channelConfig === 'speech-right' ? 'active' : ''}`}
               onClick={() => setChannelConfig('speech-right')}
               disabled={isPlaying || isCalibrationPlaying}
@@ -694,7 +898,7 @@ function App() {
             </tbody>
           </table>
           <div className="results-summary">
-            {scoredCount > 0 
+            {scoredCount > 0
               ? (
                 <>
                   <div className="summary-stat">
@@ -736,8 +940,8 @@ function App() {
               {blockStats.map((stats, index) => (
                 <div key={index} className="graph-bar-container">
                   <div className="graph-bar-wrapper">
-                    <div 
-                      className="graph-bar" 
+                    <div
+                      className="graph-bar"
                       style={{ height: `${stats.percentage}%` }}
                       title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
                     >
@@ -745,7 +949,7 @@ function App() {
                     </div>
                   </div>
                   <div className="graph-x-label">
-                    {BLOCK_SIZES[index]}<br/>
+                    {BLOCK_SIZES[index]}<br />
                     <span className="x-label-small">sentences</span>
                   </div>
                 </div>
@@ -760,61 +964,74 @@ function App() {
       {!showResults && (
         <div className="section">
           <div className="section-title">Live Results Comparison</div>
-          <div className="results-comparison">
-            {['A', 'B'].map(form => {
-              const formBlockStats = getFormBlockStats(form);
-              const formScores = scores[form] || {};
-              const formScoredCount = Object.keys(formScores).length;
-              const formCorrectCount = Object.values(formScores).filter(v => v === true).length;
-              const formPercentage = formScoredCount > 0 ? (formCorrectCount / formScoredCount * 100).toFixed(1) : 0;
-              
-              return (
-                <div key={form} className="form-graph">
-                  <div className="form-graph-header">
-                    <h3>Form {form}</h3>
-                    <div className="form-summary">
-                      {formPercentage}% ({formCorrectCount} out of {formScoredCount} scored)
-                    </div>
-                  </div>
-                  <div className="graph-container">
-                    <div className="graph-y-axis-title">Performance</div>
-                    <div className="graph-y-axis">
-                      <div className="y-label">100%</div>
-                      <div className="y-label">75%</div>
-                      <div className="y-label">50%</div>
-                      <div className="y-label">25%</div>
-                      <div className="y-label">0%</div>
-                    </div>
-                    <div className="graph-content">
-                      {formBlockStats.map((stats, index) => {
-                        const barHeight = stats.percentage || 0;
-                        return (
-                          <div key={`${form}-block-${index}-${stats.correct}-${stats.total}`} className="graph-bar-container">
-                            <div className="graph-bar-wrapper">
-                              <div 
-                                className="graph-bar" 
-                                style={{ 
-                                  height: `${barHeight}%`,
-                                  minHeight: barHeight > 0 ? '2px' : '0px'
-                                }}
-                                title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
-                              >
-                                <span className="bar-label">{stats.total > 0 ? stats.percentage.toFixed(0) + '%' : ''}</span>
-                              </div>
-                            </div>
-                            <div className="graph-x-label">
-                              {BLOCK_SIZES[index]}<br/>
-                              <span className="x-label-small">sentences</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="graph-x-title">Set Size</div>
+          <div className="results-comparison" style={{ display: 'block' }}>
+            <div className="form-graph">
+              <div className="form-graph-header">
+                <h3>Combined Performance</h3>
+                <div className="form-summary" style={{ fontSize: '16px', display: 'flex', gap: '20px', justifyContent: 'center' }}>
+                  <span style={{ color: '#667eea' }}>■ Form A</span>
+                  <span style={{ color: '#ff9f43' }}>■ Form B</span>
                 </div>
-              );
-            })}
+              </div>
+              <div className="graph-container">
+                <div className="graph-y-axis-title">Performance</div>
+                <div className="graph-y-axis">
+                  <div className="y-label">100%</div>
+                  <div className="y-label">75%</div>
+                  <div className="y-label">50%</div>
+                  <div className="y-label">25%</div>
+                  <div className="y-label">0%</div>
+                </div>
+                <div className="graph-content">
+                  {BLOCK_SIZES.map((size, index) => {
+                    const statsA = getFormBlockStats('A')[index];
+                    const statsB = getFormBlockStats('B')[index];
+
+                    const heightA = statsA.percentage || 0;
+                    const heightB = statsB.percentage || 0;
+
+                    return (
+                      <div key={index} className="graph-bar-container">
+                        <div className="graph-bar-wrapper" style={{ gap: '4px', alignItems: 'flex-end' }}>
+                          {/* Bar A */}
+                          <div
+                            className="graph-bar"
+                            style={{
+                              height: `${heightA}%`,
+                              minHeight: heightA > 0 ? '2px' : '0px',
+                              background: 'linear-gradient(to top, #667eea, #764ba2)',
+                              width: '40px'
+                            }}
+                            title={`Form A - Block ${index + 1}: ${statsA.correct}/${statsA.total} = ${statsA.percentage.toFixed(1)}%`}
+                          >
+                            <span className="bar-label" style={{ fontSize: '10px' }}>{statsA.total > 0 ? statsA.percentage.toFixed(0) : ''}</span>
+                          </div>
+
+                          {/* Bar B */}
+                          <div
+                            className="graph-bar"
+                            style={{
+                              height: `${heightB}%`,
+                              minHeight: heightB > 0 ? '2px' : '0px',
+                              background: 'linear-gradient(to top, #ff9f43, #ff6b6b)',
+                              width: '40px'
+                            }}
+                            title={`Form B - Block ${index + 1}: ${statsB.correct}/${statsB.total} = ${statsB.percentage.toFixed(1)}%`}
+                          >
+                            <span className="bar-label" style={{ fontSize: '10px' }}>{statsB.total > 0 ? statsB.percentage.toFixed(0) : ''}</span>
+                          </div>
+                        </div>
+                        <div className="graph-x-label">
+                          {size}<br />
+                          <span className="x-label-small">sentences</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="graph-x-title">Set Size</div>
+            </div>
           </div>
         </div>
       )}
@@ -830,7 +1047,7 @@ function App() {
               const formScoredCount = Object.keys(formScores).length;
               const formCorrectCount = Object.values(formScores).filter(v => v === true).length;
               const formPercentage = formScoredCount > 0 ? (formCorrectCount / formScoredCount * 100).toFixed(1) : 0;
-              
+
               return (
                 <div key={form} className="form-graph">
                   <div className="form-graph-header">
@@ -852,8 +1069,8 @@ function App() {
                       {formBlockStats.map((stats, index) => (
                         <div key={index} className="graph-bar-container">
                           <div className="graph-bar-wrapper">
-                            <div 
-                              className="graph-bar" 
+                            <div
+                              className="graph-bar"
                               style={{ height: `${stats.percentage}%` }}
                               title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
                             >
@@ -861,7 +1078,7 @@ function App() {
                             </div>
                           </div>
                           <div className="graph-x-label">
-                            {BLOCK_SIZES[index]}<br/>
+                            {BLOCK_SIZES[index]}<br />
                             <span className="x-label-small">sentences</span>
                           </div>
                         </div>

@@ -1,30 +1,38 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const url = require('url');
 
-// This check is the key. It will be false in development and true in production.
 const isPackaged = app.isPackaged;
 
-// Define a global variable to hold the path to your audio files
-global.audioPath = isPackaged
-  ? path.join(process.resourcesPath, 'app', 'audio_output')
-  : path.join(__dirname, '..', 'audio_output');
+const audioBaseUrl = isPackaged
+  ? url.format({
+      pathname: path.join(app.getAppPath(), 'audio_output'),
+      protocol: 'file:',
+      slashes: true
+    })
+  : 'http://localhost:3001/audio_output';
 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1000,
     height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false, // Recommended to be false
+      contextIsolation: true, // Recommended to be true
+      preload: path.join(__dirname, 'preload.js') // Use the preload script
     },
+  });
+
+  // Listen for the 'get-audio-base-url' message from the renderer process
+  ipcMain.on('get-audio-base-url', (event) => {
+    event.returnValue = audioBaseUrl;
   });
 
   // Load the app
   if (!isPackaged) {
-    // In development (when isPackaged is false), load from the dev server
     win.loadURL('http://localhost:3001');
+    win.webContents.openDevTools();
   } else {
-    // In production (when isPackaged is true), load the bundled file
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 }

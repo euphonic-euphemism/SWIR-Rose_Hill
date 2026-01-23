@@ -2,7 +2,7 @@ const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 module.exports = {
-  entry: './src/index.js',
+  entry: ['./src/polyfills.js', './src/index.js'],
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'bundle.js',
@@ -41,11 +41,16 @@ module.exports = {
         publicPath: '/',
       }
     ],
-    port: 3000,
-    hot: true
+    port: 3001,
+    hot: true,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+      "Access-Control-Allow-Headers": "X-Requested-With, content-type, Authorization"
+    }
   },
   resolve: {
     extensions: ['.js', '.jsx']
   },
-  target: 'electron-renderer'
+  target: 'web'
 };
