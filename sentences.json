@@ -298,35 +298,5 @@
     "text": "The boy played with a toy.",
     "target": "toy",
     "list": "B"
-  },
-  {
-    "id": "p01",
-    "text": "The sun rises in the east.",
-    "target": "east",
-    "list": "P"
-  },
-  {
-    "id": "p02",
-    "text": "Most cats like to sleep all day.",
-    "target": "day",
-    "list": "P"
-  },
-  {
-    "id": "p03",
-    "text": "A red car drove down the street.",
-    "target": "street",
-    "list": "P"
-  },
-  {
-    "id": "p04",
-    "text": "We cook dinner at six o'clock.",
-    "target": "clock",
-    "list": "P"
-  },
-  {
-    "id": "p05",
-    "text": "Good shoes help your feet hurt less.",
-    "target": "less",
-    "list": "P"
   }
 ]

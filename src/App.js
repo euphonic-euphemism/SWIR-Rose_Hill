@@ -1,28 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import sentencesData from '../sentences.json';
+import sentencesDataRaw from '../sentences.json';
+import practiceSentencesRaw from '../practice_sentences.json';
+
+// Merge datasets
+const sentencesData = [...sentencesDataRaw, ...practiceSentencesRaw];
 
 // Access the preloaded API, with a fallback for running in a normal browser
 const audioBaseUrl = window.electronAPI ? window.electronAPI.getAudioBaseUrl() : './audio_output';
 
-const BLOCK_SIZES = [3, 4, 5, 6, 7];
-
 function App() {
   const [patientName, setPatientName] = useState('');
   const [testDate, setTestDate] = useState(new Date().toISOString().slice(0, 10));
-  const [currentForm, setCurrentForm] = useState('A');
+  const [currentForm, setCurrentForm] = useState('P');
   const [currentBlock, setCurrentBlock] = useState(0);
   const [isPractice, setIsPractice] = useState(false);
   const [scores, setScores] = useState({ A: {}, B: {}, P: {} });
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayingIndex, setCurrentPlayingIndex] = useState(null);
   const [showScoring, setShowScoring] = useState(false);
+  // Timer State
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  // Strategy State
+  const [strategyScores, setStrategyScores] = useState({ A: {}, B: {}, P: {} });
+  const [hearingAidModels, setHearingAidModels] = useState({ A: '', B: '' });
+  const [quickSIN, setQuickSIN] = useState('');
+
   const [isCalibrationPlaying, setIsCalibrationPlaying] = useState(false);
   const [noiseEnabled, setNoiseEnabled] = useState(false);
   const [snr, setSnr] = useState(15); // SNR in dB
   const [channelConfig, setChannelConfig] = useState('speech-left'); // 'speech-left' or 'speech-right'
-  const [showResults, setShowResults] = useState(false);
 
   const audioRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -35,6 +44,12 @@ function App() {
   // Logic Control Refs
   const isPlayingRef = useRef(false);
   const currentCancelRef = useRef(null);
+
+  // Helper: Get Block Sizes based on Form
+  const getBlockSizes = (form) => {
+    if (form === 'P') return [3, 5];
+    return [3, 4, 5, 6, 7]; // Standard for A and B
+  };
 
   // Initialize Web Audio API for stereo control
   useEffect(() => {
@@ -130,6 +145,25 @@ function App() {
     }
   }, [snr, noiseEnabled]);
 
+  const handleQuickSinChange = (e) => {
+    const val = e.target.value;
+    setQuickSIN(val);
+
+    if (val !== '') {
+      // Auto-set SNR: QuickSIN + 10
+      // Clamp to max 25
+      const parsed = parseFloat(val);
+      if (!isNaN(parsed)) {
+        let newSnr = parsed + 10;
+        if (newSnr > 25) newSnr = 25;
+        if (newSnr < 0) newSnr = 0; // Should be impossible if QuickSIN >= 0, but good safety
+        setSnr(newSnr);
+        // Also ensure noise is enabled? User didn't ask, but SNR implies noise.
+        // Let's leave noise enablement manual to avoid surprise.
+      }
+    }
+  };
+
   const formSentences = sentencesData.filter(s => s.list === currentForm);
 
   useEffect(() => {
@@ -138,14 +172,41 @@ function App() {
     setShowScoring(false);
   }, [currentForm]);
 
+  // Timer Logic
+  useEffect(() => {
+    let interval = null;
+    if (isTimerRunning) {
+      interval = setInterval(() => {
+        setTimerSeconds(s => s + 1);
+      }, 1000);
+    } else if (!isTimerRunning && timerSeconds !== 0) {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isTimerRunning, timerSeconds]);
+
+  const formatTime = (totalSeconds) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const toggleTimer = () => setIsTimerRunning(!isTimerRunning);
+  const stopTimer = () => setIsTimerRunning(false);
+  const resetTimer = () => {
+    setIsTimerRunning(false);
+    setTimerSeconds(0);
+  };
+
   const getBlockRange = (blockNum) => {
-    const start = BLOCK_SIZES.slice(0, blockNum).reduce((a, b) => a + b, 0);
-    const end = start + BLOCK_SIZES[blockNum];
+    const sizes = getBlockSizes(currentForm);
+    const start = sizes.slice(0, blockNum).reduce((a, b) => a + b, 0);
+    const end = start + sizes[blockNum];
     return { start, end };
   };
 
   const getCurrentBlockSentences = () => {
-    if (currentForm === 'P') return formSentences;
+
     const { start, end } = getBlockRange(currentBlock);
     return formSentences.slice(start, end);
   };
@@ -173,12 +234,12 @@ function App() {
 
     // Safety check
     if (!formSents || formSents.length === 0) {
-      return BLOCK_SIZES.map(() => ({ correct: 0, total: 0, percentage: 0 }));
+      return getBlockSizes(formName).map(() => ({ correct: 0, total: 0, percentage: 0 }));
     }
 
     const formScores = scores[formName] || {};
 
-    return BLOCK_SIZES.map((size, blockNum) => {
+    return getBlockSizes(formName).map((size, blockNum) => {
       const { start, end } = getBlockRange(blockNum);
       const blockSentences = formSents.slice(start, end);
 
@@ -194,6 +255,47 @@ function App() {
 
       return { correct, total, percentage: total > 0 ? (correct / total * 100) : 0 };
     });
+  };
+
+  const getBenefitScore = (formName) => {
+    // Indices 2, 3, 4 corresponds to Block Sizes 5, 6, 7
+    const targetBlockIndices = [2, 3, 4]; // 3rd, 4th, 5th blocks
+    const formSents = sentencesData.filter(s => s.list === formName);
+    const formScores = scores[formName] || {};
+
+    let totalCorrect = 0;
+    let totalTarget = 0;
+
+    targetBlockIndices.forEach(blockIndex => {
+      const { start, end } = getBlockRange(blockIndex);
+      const blockSentences = formSents.slice(start, end);
+
+      blockSentences.forEach(sentence => {
+        if (sentence && formScores[sentence.id] !== undefined) {
+          totalTarget++;
+          if (formScores[sentence.id]) totalCorrect++;
+        }
+      });
+    });
+
+    const percentage = totalTarget > 0 ? (totalCorrect / totalTarget * 100).toFixed(1) : 0;
+    return { correct: totalCorrect, total: totalTarget, percentage };
+  };
+
+  const getStrategyIndex = (formName) => {
+    // Strategy Index = (Sentences where First Correct was Last Word / Total Scored Sentences) * 100
+    // But user request says "total number of blocks" - clarification implies "number of sentence blocks where..." which likely means sentences.
+    // Assuming "blocks" in user request means "sentences" (the items being scored).
+
+    // Total sentences where a strategy was recorded (i.e. at least one correct word was scored)
+    const formStrategies = strategyScores[formName] || {};
+    const entries = Object.values(formStrategies);
+    const totalScoredWithStrategy = entries.length;
+    const recencyCount = entries.filter(v => v === true).length;
+
+    const percentage = totalScoredWithStrategy > 0 ? (recencyCount / totalScoredWithStrategy * 100).toFixed(1) : 0;
+
+    return { count: recencyCount, total: totalScoredWithStrategy, percentage };
   };
 
   const playCalibration = async () => {
@@ -472,7 +574,45 @@ function App() {
   };
 
   const nextBlock = () => {
-    if (currentBlock < BLOCK_SIZES.length - 1) {
+    const sizes = getBlockSizes(currentForm);
+    // Stopping Rule: If Form A or B, and current + previous block are 0%, stop.
+    if (['A', 'B'].includes(currentForm) && currentBlock > 0) {
+      const currentStats = getBlockStats(currentBlock);
+      const prevStats = getBlockStats(currentBlock - 1);
+
+      if (currentStats.percentage === 0 && prevStats.percentage === 0) {
+        // Trigger Stopping Rule
+        alert(`Stopping Rule Triggered: Two consecutive sets with 0% correct.\n\nCompleting Form ${currentForm} with 0 score for remaining items.`);
+
+        // Auto-score remaining blocks as 0 (False)
+        const allSentenceIdsToFail = [];
+        for (let b = currentBlock + 1; b < sizes.length; b++) {
+          const { start, end } = getBlockRange(b);
+          const sents = formSentences.slice(start, end);
+          sents.forEach(s => allSentenceIdsToFail.push(s.id));
+        }
+
+        // Batch update scores
+        setScores(prev => {
+          const updatedForm = { ...prev[currentForm] };
+          allSentenceIdsToFail.forEach(id => {
+            updatedForm[id] = false;
+          });
+          return {
+            ...prev,
+            [currentForm]: updatedForm
+          };
+        });
+
+        // Jump to end (or stay on last block to show results?)
+        // Let's jump to the last block so the "Next" button disappears and graphs update
+        setCurrentBlock(sizes.length - 1);
+        setShowScoring(false);
+        return;
+      }
+    }
+
+    if (currentBlock < sizes.length - 1) {
       setCurrentBlock(currentBlock + 1);
       setShowScoring(false);
     } else {
@@ -500,6 +640,7 @@ function App() {
   };
 
   const toggleWordScore = (sentenceId, wordIndex, isCorrect) => {
+    // Update Score
     setScores(prev => {
       const currentFormScores = prev[currentForm];
       const currentSentenceScores = currentFormScores[sentenceId] || []; // Array of bools
@@ -516,6 +657,43 @@ function App() {
         }
       };
     });
+
+    // Strategy Index Logic
+    // If marking as correct, check if this is the first correct mark for this sentence
+    if (isCorrect) {
+      setStrategyScores(prev => {
+        const formStrategies = prev[currentForm] || {};
+
+        // If we already have a strategy verdict for this sentence, do NOT overwrite it.
+        // History is preserved (First move counts).
+        if (formStrategies[sentenceId] !== undefined) {
+          return prev;
+        }
+
+        // Check if any OTHER words are currently correct in the *previous* state
+        const currentSentenceScores = scores[currentForm][sentenceId] || [];
+        const hasExistingCorrect = currentSentenceScores.some(s => s === true);
+
+        if (!hasExistingCorrect) {
+          // This is the FIRST correct mark.
+          // Check if it is the LAST word.
+          const sentence = sentencesData.find(s => s.id === sentenceId);
+          if (sentence) {
+            const wordCount = sentence.text.split(' ').length;
+            const isLastWord = wordIndex === wordCount - 1;
+
+            return {
+              ...prev,
+              [currentForm]: {
+                ...formStrategies,
+                [sentenceId]: isLastWord
+              }
+            };
+          }
+        }
+        return prev;
+      });
+    }
   };
 
   const resetForm = () => {
@@ -524,8 +702,93 @@ function App() {
         ...prev,
         [currentForm]: {}
       }));
+      setStrategyScores(prev => ({
+        ...prev,
+        [currentForm]: {}
+      }));
+      setHearingAidModels(prev => ({
+        ...prev,
+        [currentForm]: ''
+      }));
       setCurrentBlock(0);
       setShowScoring(false);
+    }
+  };
+
+  const startNewTest = () => {
+    if (window.confirm("Start a new test? This will clear all current data (Patient Name, Scores, Timer).")) {
+      setPatientName('');
+      setTestDate(new Date().toISOString().split('T')[0]);
+      setScores({ A: {}, B: {}, P: {} });
+      setStrategyScores({ A: {}, B: {}, P: {} });
+      setHearingAidModels({ A: '', B: '' });
+      setQuickSIN('');
+      setTimerSeconds(0);
+      setIsTimerRunning(false);
+      setCurrentForm('A');
+      setCurrentBlock(0);
+      setShowScoring(false);
+      setIsPractice(false);
+    }
+  };
+
+  const simulateTest = () => {
+    if (window.confirm("Load simulated test data? This will overwrite current data.")) {
+      setPatientName('Simulated Test Patient');
+      setTestDate(new Date().toISOString().split('T')[0]);
+
+      const newScores = { A: {}, B: {}, P: {} };
+      const newStrategyScores = { A: {}, B: {}, P: {} };
+
+      ['A', 'B'].forEach(form => {
+        const formSents = sentencesData.filter(s => s.list === form);
+
+        const sizes = getBlockSizes(form); // Use form-specific block sizes
+        sizes.forEach((size, blockIndex) => {
+          // Calculate probability of correct recall based on set size
+          // AGGRESSIVE DECAY: Size 3 -> 0.80, Size 7 -> 0.20
+          const baseProb = 0.80 - (blockIndex * 0.15);
+
+          const { start, end } = getBlockRange(blockIndex);
+          const blockSentences = formSents.slice(start, end);
+
+          blockSentences.forEach(sentence => {
+            // High variance: +/- 20%
+            const sentenceProb = baseProb + (Math.random() * 0.4 - 0.2);
+            // Clamp
+            const effectiveProb = Math.max(0.05, Math.min(0.95, sentenceProb));
+
+            const isCorrect = Math.random() < effectiveProb;
+
+            // For Form A/B, score is a single boolean (Target Word Correctness)
+            newScores[form][sentence.id] = isCorrect;
+
+            // Simulate Strategy: If correct, 60% chance they said it first (Recency)
+            // Note: Since we only score the TARGET word in Form A/B, we use that as proxy.
+            // If the sentence is correct, we assume they got the target.
+            // For Strategy Index, we need to decide if this 'Correct' event was the 'Last Word'.
+
+            // To properly simulate the Strategy Index which relies on 'toggleWordScore' logic
+            // (where we check if the first correct mark was the last word),
+            // we need to set the strategy score directly here.
+
+            if (isCorrect) {
+              if (Math.random() < 0.6) {
+                newStrategyScores[form][sentence.id] = true;
+              } else {
+                newStrategyScores[form][sentence.id] = false;
+              }
+            }
+          });
+        });
+      });
+
+      setScores(newScores);
+      setStrategyScores(newStrategyScores);
+      setCurrentForm('A');
+      setCurrentBlock(0);
+      setShowScoring(false);
+      setIsPractice(false);
     }
   };
 
@@ -538,8 +801,53 @@ function App() {
     content += '='.repeat(80) + '\n';
     content += `Patient Name: ${patientName}\n`;
     content += `Test Date: ${testDate}\n`;
-    content += `Form: ${currentForm}\n`;
+    content += `Timer Duration: ${formatTime(timerSeconds)}\n`;
     content += '='.repeat(80) + '\n\n';
+
+    // Helper to print stats for a form
+    const printFormStats = (formName) => {
+      const formScores = scores[formName];
+      const scoredCount = Object.keys(formScores).length;
+
+      if (scoredCount === 0) return '';
+
+      const correctCount = Object.values(formScores).filter(Boolean).length;
+      const percentage = (correctCount / scoredCount * 100).toFixed(1);
+
+      let section = `--- FORM ${formName} ---\n`;
+      if (hearingAidModels[formName]) {
+        section += `Hearing Aid Model: ${hearingAidModels[formName]}\n`;
+      }
+      section += `Total Score: ${percentage}% (${correctCount}/${scoredCount})\n`;
+
+      const benefit = getBenefitScore(formName);
+      if (benefit.total > 0) {
+        section += `Benefit Score (Sets 5,6,7): ${benefit.percentage}% (${benefit.correct}/${benefit.total})\n`;
+      }
+
+      const strategy = getStrategyIndex(formName);
+      if (strategy.total > 0) {
+        section += `Strategy Index: ${strategy.percentage}% (${strategy.count}/${strategy.total} sentences)\n`;
+      }
+      section += '\n';
+      return section;
+    };
+
+    content += printFormStats('A');
+    content += printFormStats('B');
+
+    // Net Benefit
+    const benA = getBenefitScore('A');
+    const benB = getBenefitScore('B');
+    if (benA.total > 0 && benB.total > 0) {
+      const net = Math.abs(parseFloat(benB.percentage) - parseFloat(benA.percentage)).toFixed(1);
+      content += `Net Benefit (Form B - Form A): ${net}%\n\n`;
+    }
+
+    content += printFormStats('P'); // Practice if needed
+
+    content += 'DETAILED LOG:\n';
+    content += '-'.repeat(80) + '\n';
 
     let correctCount = 0;
     let scoredCount = 0;
@@ -592,19 +900,67 @@ function App() {
     doc.setFontSize(12);
     doc.text(`Patient Name: ${patientName}`, 14, 30);
     doc.text(`Test Date: ${testDate}`, 14, 40);
-    doc.text(`Form: ${currentForm}`, 14, 50);
+    doc.text(`Timer Duration: ${formatTime(timerSeconds)}`, 14, 50);
+
+    // Header Stats for Form A and B
+    doc.setFontSize(10);
+
+    // Helper to get stats
+    const getStats = (f) => {
+      const fScores = scores[f];
+      const sCount = Object.keys(fScores).length;
+      if (sCount === 0) return null;
+      const cCount = Object.values(fScores).filter(Boolean).length;
+      const pct = (cCount / sCount * 100).toFixed(1);
+      const ben = getBenefitScore(f);
+      const strat = getStrategyIndex(f);
+      return { pct, count: `${cCount}/${sCount}`, ben, strat };
+    };
+
+    const statsA = getStats('A');
+    const statsB = getStats('B');
+
+    // Right side column X positions
+    const col1X = 120;
+    const col2X = 160;
+    let currentY = 30;
+
+    if (statsA) {
+      doc.setTextColor(102, 126, 234); // Purple for A
+      doc.text(`FORM A`, col1X, currentY);
+      doc.setTextColor(0);
+      doc.text(`${statsA.pct}% (${statsA.count})`, col1X, currentY + 5);
+      if (statsA.ben.total > 0) doc.text(`Ben: ${statsA.ben.percentage}%`, col1X, currentY + 10);
+      if (statsA.strat.total > 0) doc.text(`Strat: ${statsA.strat.percentage}%`, col1X, currentY + 15);
+    }
+
+    if (statsB) {
+      doc.setTextColor(255, 159, 67); // Orange for B
+      doc.text(`FORM B`, col2X, currentY);
+      doc.setTextColor(0);
+      doc.text(`${statsB.pct}% (${statsB.count})`, col2X, currentY + 5);
+      if (statsB.ben.total > 0) doc.text(`Ben: ${statsB.ben.percentage}%`, col2X, currentY + 10);
+      if (statsB.strat.total > 0) doc.text(`Strat: ${statsB.strat.percentage}%`, col2X, currentY + 15);
+    }
+
+    // Net Benefit
+    if (statsA && statsB && statsA.ben.total > 0 && statsB.ben.total > 0) {
+      const net = Math.abs(parseFloat(statsB.ben.percentage) - parseFloat(statsA.ben.percentage)).toFixed(1);
+      doc.setFontSize(11);
+      doc.text(`Net Benefit: ${net}%`, 140, currentY + 25);
+    }
 
     // Draw Graph instead of Table
 
     const startX = 20;
-    const startY = 70;
+    const startY = 80;
     const graphWidth = 160;
     const graphHeight = 100;
     const maxVal = 100;
 
     // Draw Title
     doc.setFontSize(14);
-    doc.text(`Performance Comparison (Combined)`, 14, 60);
+    doc.text(`Performance Comparison (Combined)`, 14, 70);
 
     // Draw Axis
     doc.setLineWidth(0.5);
@@ -638,19 +994,19 @@ function App() {
     const barWidth = 15;
 
     // Calculate stats for BOTH forms
-    const statsA = getFormBlockStats('A');
-    const statsB = getFormBlockStats('B');
+    const statsA_blocks = getFormBlockStats('A');
+    const statsB_blocks = getFormBlockStats('B');
 
-    BLOCK_SIZES.forEach((size, i) => {
-      // Calculate position
-      const sectionWidth = graphWidth / BLOCK_SIZES.length;
+    const sizesA = getBlockSizes('A'); // Comparison is usually valid for A/B standard sizes
+    sizesA.forEach((size, i) => {
+      const sectionWidth = graphWidth / sizesA.length;
       const groupCenterX = startX + (sectionWidth * i) + (sectionWidth / 2);
 
       const xA = groupCenterX - barWidth - 1; // Shift left
       const xB = groupCenterX + 1; // Shift right
 
       // Draw Bar A
-      const sA = statsA[i];
+      const sA = statsA_blocks[i];
       const hA = (sA.percentage / 100) * graphHeight;
       const yA = startY + graphHeight - hA;
 
@@ -660,7 +1016,7 @@ function App() {
       }
 
       // Draw Bar B
-      const sB = statsB[i];
+      const sB = statsB_blocks[i];
       const hB = (sB.percentage / 100) * graphHeight;
       const yB = startY + graphHeight - hB;
 
@@ -692,7 +1048,7 @@ function App() {
   };
 
   const blockSentences = getCurrentBlockSentences();
-  const blockSize = BLOCK_SIZES[currentBlock];
+  const blockSize = getBlockSizes(currentForm)[currentBlock];
   const targets = blockSentences.map(s => s.target).join(', ');
 
   // Calculate summary stats
@@ -701,17 +1057,53 @@ function App() {
   const correctCount = Object.values(formScores).filter(Boolean).length;
   const percentage = scoredCount > 0 ? (correctCount / scoredCount * 100).toFixed(1) : 0;
 
+  const benefitStats = getBenefitScore(currentForm);
+  const strategyStats = getStrategyIndex(currentForm);
+
   // Calculate block statistics for graph
-  const blockStats = BLOCK_SIZES.map((size, index) => getBlockStats(index));
-  const allScored = scoredCount === 25;
+  const blockStats = getBlockSizes(currentForm).map((size, index) => getBlockStats(index));
+  const allScored = scoredCount > 0 && scoredCount === formSentences.length;
 
   return (
     <div className="app">
-      <h1>Speech Audiometry Scoring System</h1>
+      <h1>SWIR - Rose Hill Clinical Version</h1>
 
       {/* Patient Info Section */}
       <div className="section">
-        <div className="section-title">Patient Information</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>Patient Information</div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={simulateTest}
+              style={{
+                backgroundColor: '#9c27b0',
+                color: 'white',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '0.9em'
+              }}
+            >
+              Load Simulated Patient
+            </button>
+            <button
+              onClick={startNewTest}
+              style={{
+                backgroundColor: '#ff9800',
+                color: 'white',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              New Test
+            </button>
+          </div>
+        </div>
         <div className="patient-info-grid">
           <div className="input-group">
             <label htmlFor="patientName">Patient Name</label>
@@ -732,6 +1124,59 @@ function App() {
               onChange={(e) => setTestDate(e.target.value)}
             />
           </div>
+          <div className="input-group">
+            <label htmlFor="quickSIN">QuickSIN Score (dB)</label>
+            <input
+              type="number"
+              id="quickSIN"
+              value={quickSIN}
+              onChange={handleQuickSinChange}
+              placeholder="Enter Score"
+              title="Sets SNR to Score + 10dB automatically"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Timer Controls */}
+      <div className="section">
+        <div className="section-title">Test Timer</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ fontSize: '32px', fontWeight: 'bold', fontFamily: 'monospace', minWidth: '100px' }}>
+            {formatTime(timerSeconds)}
+          </div>
+          <div>
+            {!isTimerRunning ? (
+              <button
+                onClick={toggleTimer}
+                className="btn btn-primary"
+                style={{ marginRight: '10px', backgroundColor: '#28a745' }}
+              >
+                Start
+              </button>
+            ) : (
+              <button
+                onClick={toggleTimer}
+                className="btn"
+                style={{ marginRight: '10px', backgroundColor: '#ffc107', color: 'black' }}
+              >
+                Pause
+              </button>
+            )}
+            <button
+              onClick={stopTimer}
+              className="btn"
+              style={{ marginRight: '10px', backgroundColor: '#dc3545', color: 'white' }}
+            >
+              Stop
+            </button>
+            <button
+              onClick={resetTimer}
+              className="btn btn-secondary"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </div>
 
@@ -740,6 +1185,13 @@ function App() {
         <div className="section-title">Form Selection</div>
         <div className="form-selection">
           <div className="btn-group" style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className={`btn ${currentForm === 'P' ? 'btn-warning' : 'btn-secondary'}`}
+              onClick={() => { setCurrentForm('P'); setIsPractice(true); setCurrentBlock(0); }}
+              disabled={isPlaying || isCalibrationPlaying}
+            >
+              Practice
+            </button>
             <button
               className={`btn ${currentForm === 'A' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => { setCurrentForm('A'); setIsPractice(false); }}
@@ -753,13 +1205,6 @@ function App() {
               disabled={isPlaying || isCalibrationPlaying}
             >
               Form B
-            </button>
-            <button
-              className={`btn ${currentForm === 'P' ? 'btn-warning' : 'btn-secondary'}`}
-              onClick={() => { setCurrentForm('P'); setIsPractice(true); setCurrentBlock(0); }}
-              disabled={isPlaying || isCalibrationPlaying}
-            >
-              Practice
             </button>
           </div>
           <div className="separator"></div>
@@ -783,14 +1228,28 @@ function App() {
         </div>
       </div>
 
-      {/* Standard Form View */}
-      {currentForm !== 'P' && (
+      {/* Standard Form View - Now Enabled for Practice too */}
+      {(
         <>
           {/* Current Block Info */}
           <div className="section">
             <div className="section-title">Current Block</div>
+
+            {/* Hearing Aid Model Input */}
+            <div className="input-group" style={{ marginBottom: '15px' }}>
+              <label htmlFor="haModel">Hearing Aid Model (Form {currentForm})</label>
+              <input
+                type="text"
+                id="haModel"
+                value={hearingAidModels[currentForm]}
+                onChange={(e) => setHearingAidModels(prev => ({ ...prev, [currentForm]: e.target.value }))}
+                placeholder={`Enter HA Model for Form ${currentForm}`}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+            </div>
+
             <div className="block-info">
-              <h3>Block {currentBlock + 1}/5 ({blockSize} sentences)</h3>
+              <h3>Block {currentBlock + 1}/{getBlockSizes(currentForm).length} ({blockSize} sentences)</h3>
               {isPlaying && currentPlayingIndex !== null ? (
                 <>
                   <div className="sentence-text">
@@ -845,8 +1304,8 @@ function App() {
                     <span>SNR: {snr > 0 ? '+' : ''}{snr} dB</span>
                     <input
                       type="range"
-                      min="-10"
-                      max="20"
+                      min="0"
+                      max="25"
                       step="1"
                       value={snr}
                       onChange={(e) => setSnr(parseInt(e.target.value))}
@@ -854,9 +1313,9 @@ function App() {
                       className="snr-slider"
                     />
                     <div className="snr-range-labels">
-                      <span>-10 dB</span>
                       <span>0 dB</span>
-                      <span>+20 dB</span>
+                      <span>12 dB</span>
+                      <span>25 dB</span>
                     </div>
                   </label>
                 </div>
@@ -974,304 +1433,226 @@ function App() {
               </div>
             </div>
           </div>
+        </>
+      )}
+      {/* Summary */}
+      <div className="summary">
+        <div className="summary-main">
+          {percentage}% Correct ({correctCount} out of 25 words)
+        </div>
+        {currentForm !== 'P' && benefitStats.total > 0 && (
+          <div className="summary-sub" style={{ fontSize: '0.8em', marginTop: '5px', color: '#666' }}>
+            Benefit Score: {benefitStats.percentage}% (Sets 5,6,7)
+          </div>
+        )}
+        {currentForm !== 'P' && strategyStats.total > 0 && (
+          <div className="summary-sub" style={{ fontSize: '0.8em', marginTop: '2px', color: '#666' }}>
+            Strategy Index: {strategyStats.percentage}% (Recency)
+          </div>
+        )}
+      </div>
 
-          {/* Summary */}
-          <div className="summary">
-            <div className="summary-main">
-              {percentage}% Correct ({correctCount} out of 25 words)
+      {/* Performance Graph */}
+      {allScored && (
+        <div className="section">
+          <div className="section-title">Performance by Block</div>
+          <div className="graph-container">
+            <div className="graph-y-axis">
+              <div className="y-label">100%</div>
+              <div className="y-label">75%</div>
+              <div className="y-label">50%</div>
+              <div className="y-label">25%</div>
+              <div className="y-label">0%</div>
+            </div>
+            <div className="graph-content">
+              {blockStats.map((stats, index) => (
+                <div key={index} className="graph-bar-container">
+                  <div className="graph-bar-wrapper">
+                    <div
+                      className="graph-bar"
+                      style={{ height: `${stats.percentage}%` }}
+                      title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
+                    >
+                      <span className="bar-label">{stats.percentage.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <div className="graph-x-label">
+                    {getBlockSizes(currentForm)[index]}<br />
+                    <span className="x-label-small">sentences</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Performance Graph */}
-          {allScored && !showResults && (
-            <div className="section">
-              <div className="section-title">Performance by Block</div>
-              <div className="graph-container">
-                <div className="graph-y-axis">
-                  <div className="y-label">100%</div>
-                  <div className="y-label">75%</div>
-                  <div className="y-label">50%</div>
-                  <div className="y-label">25%</div>
-                  <div className="y-label">0%</div>
-                </div>
-                <div className="graph-content">
-                  {blockStats.map((stats, index) => (
+          {/* Metrics Table */}
+          <div className="metrics-table" style={{ marginTop: '20px', padding: '0 20px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #eee' }}>
+                  <th style={{ textAlign: 'left', padding: '8px' }}>Metric</th>
+                  <th style={{ textAlign: 'center', padding: '8px', color: '#667eea' }}>Form A</th>
+                  <th style={{ textAlign: 'center', padding: '8px', color: '#ff9f43' }}>Form B</th>
+                  <th style={{ textAlign: 'center', padding: '8px', fontWeight: 'bold' }}>Net (B-A)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Helper to render a row */}
+                {(() => {
+                  // Total Score
+                  const getPct = (f) => {
+                    const s = scores[f];
+                    const tot = Object.keys(s).length;
+                    if (!tot) return null;
+                    const corr = Object.values(s).filter(Boolean).length;
+                    return (corr / tot * 100).toFixed(1);
+                  };
+
+                  const pctA = getPct('A');
+                  const pctB = getPct('B');
+                  const netPct = (pctA && pctB) ? (pctB - pctA).toFixed(1) : '-';
+
+                  // Benefit
+                  const getBen = (f) => {
+                    const b = getBenefitScore(f);
+                    return b.total ? b.percentage : null; // return raw number/string
+                  };
+
+                  const benA = getBen('A');
+                  const benB = getBen('B');
+                  const netBen = (benA !== null && benB !== null) ? Math.abs(parseFloat(benB) - parseFloat(benA)).toFixed(1) : '-';
+
+
+
+                  // Strategy
+                  const getStrat = (f) => {
+                    const s = getStrategyIndex(f);
+                    return s.total ? s.percentage : null;
+                  };
+
+                  const stratA = getStrat('A');
+                  const stratB = getStrat('B');
+                  const netStrat = (stratA !== null && stratB !== null) ? (parseFloat(stratB) - parseFloat(stratA)).toFixed(1) : '-';
+
+                  const fmt = (val) => val !== null ? `${val}%` : '-';
+                  const fmtNet = (val) => {
+                    if (val === '-') return '-';
+                    const n = parseFloat(val);
+                    return `${n >= 0 ? '+' : ''}${n}%`;
+                  };
+
+                  return (
+                    <>
+                      <tr style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>Total Score</td>
+                        <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(pctA)}</td>
+                        <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(pctB)}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#666' }}>{fmtNet(netPct)}</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '8px' }}>Benefit Score</td>
+                        <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(benA)}</td>
+                        <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(benB)}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', fontWeight: 'bold' }}>{fmtNet(netBen)}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '8px' }}>Strategy Index</td>
+                        <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(stratA)}</td>
+                        <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(stratB)}</td>
+                        <td style={{ textAlign: 'center', padding: '8px', color: '#666' }}>{fmtNet(netStrat)}</td>
+                      </tr>
+                    </>
+                  );
+                })()}
+              </tbody>
+            </table>
+          </div>
+          <div className="graph-x-title">Set Size</div>
+        </div>
+      )}
+
+
+
+
+      {/* Live Results Comparison - Updates in Real-Time */}
+      <div className="section">
+        <div className="section-title">Live Results Comparison</div>
+        <div className="results-comparison" style={{ display: 'block' }}>
+          <div className="form-graph">
+            <div className="form-graph-header">
+              <h3>Combined Performance</h3>
+              <div className="form-summary" style={{ fontSize: '16px', display: 'flex', gap: '20px', justifyContent: 'center' }}>
+                <span style={{ color: '#667eea' }}>■ Form A</span>
+                <span style={{ color: '#ff9f43' }}>■ Form B</span>
+              </div>
+            </div>
+            <div className="graph-container">
+              <div className="graph-y-axis-title">Performance</div>
+              <div className="graph-y-axis">
+                <div className="y-label">100%</div>
+                <div className="y-label">75%</div>
+                <div className="y-label">50%</div>
+                <div className="y-label">25%</div>
+                <div className="y-label">0%</div>
+              </div>
+              <div className="graph-content">
+                {getBlockSizes('A').map((size, index) => {
+                  const statsA = getFormBlockStats('A')[index];
+                  const statsB = getFormBlockStats('B')[index];
+
+                  const heightA = statsA.percentage || 0;
+                  const heightB = statsB.percentage || 0;
+
+                  return (
                     <div key={index} className="graph-bar-container">
-                      <div className="graph-bar-wrapper">
+                      <div className="graph-bar-wrapper" style={{ gap: '4px', alignItems: 'flex-end' }}>
+                        {/* Bar A */}
                         <div
                           className="graph-bar"
-                          style={{ height: `${stats.percentage}%` }}
-                          title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
+                          style={{
+                            height: `${heightA}%`,
+                            minHeight: heightA > 0 ? '2px' : '0px',
+                            background: 'linear-gradient(to top, #667eea, #764ba2)',
+                            width: '40px'
+                          }}
+                          title={`Form A - Block ${index + 1}: ${statsA.correct}/${statsA.total} = ${statsA.percentage.toFixed(1)}%`}
                         >
-                          <span className="bar-label">{stats.percentage.toFixed(0)}%</span>
+                          <span className="bar-label" style={{ fontSize: '10px' }}>{statsA.total > 0 ? statsA.percentage.toFixed(0) : ''}</span>
+                        </div>
+
+                        {/* Bar B */}
+                        <div
+                          className="graph-bar"
+                          style={{
+                            height: `${heightB}%`,
+                            minHeight: heightB > 0 ? '2px' : '0px',
+                            background: 'linear-gradient(to top, #ff9f43, #ff6b6b)',
+                            width: '40px'
+                          }}
+                          title={`Form B - Block ${index + 1}: ${statsB.correct}/${statsB.total} = ${statsB.percentage.toFixed(1)}%`}
+                        >
+                          <span className="bar-label" style={{ fontSize: '10px' }}>{statsB.total > 0 ? statsB.percentage.toFixed(0) : ''}</span>
                         </div>
                       </div>
                       <div className="graph-x-label">
-                        {BLOCK_SIZES[index]}<br />
+                        {size}<br />
                         <span className="x-label-small">sentences</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-              <div className="graph-x-title">Set Size</div>
-            </div>
-          )}
-
-        </>
-      )}
-
-      {/* Practice Mode View */}
-      {currentForm === 'P' && (
-        <div className="section">
-          <div className="section-title">Practice List</div>
-
-          {/* Noise Control for Practice */}
-          <div className="noise-control" style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-            <label className="noise-toggle">
-              <input
-                type="checkbox"
-                checked={noiseEnabled}
-                onChange={(e) => setNoiseEnabled(e.target.checked)}
-                disabled={isPlaying}
-              />
-              <span>Add Background Noise</span>
-            </label>
-            {noiseEnabled && (
-              <div className="snr-control">
-                <label className="snr-label">
-                  <span>SNR: {snr > 0 ? '+' : ''}{snr} dB</span>
-                  <input
-                    type="range"
-                    min="-10"
-                    max="20"
-                    step="1"
-                    value={snr}
-                    onChange={(e) => setSnr(parseInt(e.target.value))}
-                    disabled={isPlaying}
-                    className="snr-slider"
-                  />
-                  <div className="snr-range-labels">
-                    <span>-10 dB</span>
-                    <span>0 dB</span>
-                    <span>+20 dB</span>
-                  </div>
-                </label>
-              </div>
-            )}
-
-            {/* Channel Configuration for Practice */}
-            <div className="channel-control" style={{ marginTop: '15px' }}>
-              <div className="section-subtitle" style={{ fontSize: '0.9em', marginBottom: '10px' }}>Channel Configuration</div>
-              <div className="channel-buttons">
-                <button
-                  className={`btn-channel ${channelConfig === 'speech-left' ? 'active' : ''}`}
-                  onClick={() => setChannelConfig('speech-left')}
-                  disabled={isPlaying || isCalibrationPlaying}
-                >
-                  Speech Left / Noise Right
-                </button>
-                <button
-                  className={`btn-channel ${channelConfig === 'speech-right' ? 'active' : ''}`}
-                  onClick={() => setChannelConfig('speech-right')}
-                  disabled={isPlaying || isCalibrationPlaying}
-                >
-                  Speech Right / Noise Left
-                </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
-
-          <div className="practice-list">
-            {formSentences.map((sentence) => {
-              const words = sentence.text.split(' ');
-              const sentenceScores = scores[currentForm][sentence.id] || [];
-              const isCurrentPlaying = isPlaying && currentPlayingIndex !== null && formSentences[currentPlayingIndex].id === sentence.id;
-
-              return (
-                <div key={sentence.id} className={`practice-row ${isCurrentPlaying ? 'playing' : ''}`}>
-                  <button
-                    className="btn btn-sm btn-play"
-                    onClick={() => playSingleSentence(sentence)}
-                    disabled={isPlaying}
-                  >
-                    ▶
-                  </button>
-                  <div className="sentence-display">
-                    {words.map((word, index) => {
-                      const isCorrect = sentenceScores[index] !== false;
-                      const isMarkedIncorrect = sentenceScores[index] === false;
-
-                      return (
-                        <span
-                          key={index}
-                          className={`practice-word ${isMarkedIncorrect ? 'incorrect' : 'correct'}`}
-                          onClick={() => toggleWordScore(sentence.id, index, isMarkedIncorrect)}
-                          title="Click to toggle score"
-                          style={{
-                            cursor: 'pointer',
-                            padding: '2px 4px',
-                            margin: '0 2px',
-                            borderRadius: '4px',
-                            backgroundColor: isMarkedIncorrect ? '#ffebee' : 'transparent',
-                            color: isMarkedIncorrect ? '#c0392b' : 'inherit',
-                            textDecoration: isMarkedIncorrect ? 'line-through' : 'none',
-                            borderBottom: isMarkedIncorrect ? 'none' : '2px solid transparent'
-                          }}
-                        >
-                          {word}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+            <div className="graph-x-title">Set Size</div>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Live Results Comparison - Updates in Real-Time */}
-      {!showResults && (
-        <div className="section">
-          <div className="section-title">Live Results Comparison</div>
-          <div className="results-comparison" style={{ display: 'block' }}>
-            <div className="form-graph">
-              <div className="form-graph-header">
-                <h3>Combined Performance</h3>
-                <div className="form-summary" style={{ fontSize: '16px', display: 'flex', gap: '20px', justifyContent: 'center' }}>
-                  <span style={{ color: '#667eea' }}>■ Form A</span>
-                  <span style={{ color: '#ff9f43' }}>■ Form B</span>
-                </div>
-              </div>
-              <div className="graph-container">
-                <div className="graph-y-axis-title">Performance</div>
-                <div className="graph-y-axis">
-                  <div className="y-label">100%</div>
-                  <div className="y-label">75%</div>
-                  <div className="y-label">50%</div>
-                  <div className="y-label">25%</div>
-                  <div className="y-label">0%</div>
-                </div>
-                <div className="graph-content">
-                  {BLOCK_SIZES.map((size, index) => {
-                    const statsA = getFormBlockStats('A')[index];
-                    const statsB = getFormBlockStats('B')[index];
 
-                    const heightA = statsA.percentage || 0;
-                    const heightB = statsB.percentage || 0;
 
-                    return (
-                      <div key={index} className="graph-bar-container">
-                        <div className="graph-bar-wrapper" style={{ gap: '4px', alignItems: 'flex-end' }}>
-                          {/* Bar A */}
-                          <div
-                            className="graph-bar"
-                            style={{
-                              height: `${heightA}%`,
-                              minHeight: heightA > 0 ? '2px' : '0px',
-                              background: 'linear-gradient(to top, #667eea, #764ba2)',
-                              width: '40px'
-                            }}
-                            title={`Form A - Block ${index + 1}: ${statsA.correct}/${statsA.total} = ${statsA.percentage.toFixed(1)}%`}
-                          >
-                            <span className="bar-label" style={{ fontSize: '10px' }}>{statsA.total > 0 ? statsA.percentage.toFixed(0) : ''}</span>
-                          </div>
-
-                          {/* Bar B */}
-                          <div
-                            className="graph-bar"
-                            style={{
-                              height: `${heightB}%`,
-                              minHeight: heightB > 0 ? '2px' : '0px',
-                              background: 'linear-gradient(to top, #ff9f43, #ff6b6b)',
-                              width: '40px'
-                            }}
-                            title={`Form B - Block ${index + 1}: ${statsB.correct}/${statsB.total} = ${statsB.percentage.toFixed(1)}%`}
-                          >
-                            <span className="bar-label" style={{ fontSize: '10px' }}>{statsB.total > 0 ? statsB.percentage.toFixed(0) : ''}</span>
-                          </div>
-                        </div>
-                        <div className="graph-x-label">
-                          {size}<br />
-                          <span className="x-label-small">sentences</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="graph-x-title">Set Size</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Results Comparison View */}
-      {showResults && (
-        <div className="section">
-          <div className="section-title">Results Comparison</div>
-          <div className="results-comparison">
-            {['A', 'B'].map(form => {
-              const formBlockStats = getFormBlockStats(form);
-              const formScores = scores[form];
-              const formScoredCount = Object.keys(formScores).length;
-              const formCorrectCount = Object.values(formScores).filter(v => v === true).length;
-              const formPercentage = formScoredCount > 0 ? (formCorrectCount / formScoredCount * 100).toFixed(1) : 0;
-
-              return (
-                <div key={form} className="form-graph">
-                  <div className="form-graph-header">
-                    <h3>Form {form}</h3>
-                    <div className="form-summary">
-                      {formPercentage}% ({formCorrectCount} out of {formScoredCount})
-                    </div>
-                  </div>
-                  <div className="graph-container">
-                    <div className="graph-y-axis-title">Performance</div>
-                    <div className="graph-y-axis">
-                      <div className="y-label">100%</div>
-                      <div className="y-label">75%</div>
-                      <div className="y-label">50%</div>
-                      <div className="y-label">25%</div>
-                      <div className="y-label">0%</div>
-                    </div>
-                    <div className="graph-content">
-                      {formBlockStats.map((stats, index) => (
-                        <div key={index} className="graph-bar-container">
-                          <div className="graph-bar-wrapper">
-                            <div
-                              className="graph-bar"
-                              style={{ height: `${stats.percentage}%` }}
-                              title={`Block ${index + 1}: ${stats.correct}/${stats.total} = ${stats.percentage.toFixed(1)}%`}
-                            >
-                              <span className="bar-label">{stats.percentage.toFixed(0)}%</span>
-                            </div>
-                          </div>
-                          <div className="graph-x-label">
-                            {BLOCK_SIZES[index]}<br />
-                            <span className="x-label-small">sentences</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="graph-x-title">Set Size</div>
-                </div>
-              );
-            })}
-          </div>
-          <button className="btn" onClick={() => setShowResults(false)}>
-            ← Back to Scoring
-          </button>
-        </div>
-      )}
 
       {/* Bottom Buttons */}
       <div className="bottom-buttons">
-        <button className="btn" onClick={() => setShowResults(!showResults)}>
-          {showResults ? '← Back to Scoring' : '📊 Fullscreen Results'}
-        </button>
         <button className="btn btn-secondary" onClick={resetForm}>
           Reset Form
         </button>

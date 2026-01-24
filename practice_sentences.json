@@ -3,5 +3,8 @@
   { "id": "p02", "text": "Most cats like to sleep all day.", "target": "day", "list": "P" },
   { "id": "p03", "text": "A red car drove down the street.", "target": "street", "list": "P" },
   { "id": "p04", "text": "We cook dinner at six o'clock.", "target": "clock", "list": "P" },
-  { "id": "p05", "text": "Good shoes help your feet hurt less.", "target": "less", "list": "P" }
+  { "id": "p05", "text": "Good shoes help your feet hurt less.", "target": "less", "list": "P" },
+  { "id": "p06", "text": "The water in the lake is cold.", "target": "cold", "list": "P" },
+  { "id": "p07", "text": "She bought a new dress for the party.", "target": "party", "list": "P" },
+  { "id": "p08", "text": "The train leaves the station at noon.", "target": "noon", "list": "P" }
 ]
