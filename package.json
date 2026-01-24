@@ -1,7 +1,7 @@
 {
   "name": "swir-audiometry-app",
-  "version": "1.0.13",
-  "description": "Speech Audiometry Scoring Application",
+  "version": "1.0.14",
+  "description": "SWIR - Rose Hill Clinical Version",
   "main": "electron/main.js",
   "scripts": {
     "start": "webpack serve --mode development --port 3001",
@@ -41,7 +41,7 @@
   },
   "build": {
     "appId": "com.audiometry.app",
-    "productName": "SWIR-Audiometry",
+    "productName": "SWIR - Rose Hill Clinical",
     "executableName": "swir-audiometry",
     "directories": {
       "buildResources": "assets",
