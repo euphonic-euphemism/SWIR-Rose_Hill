@@ -1,6 +1,6 @@
 {
   "name": "swir-audiometry-app",
-  "version": "1.0.15",
+  "version": "1.1.0",
   "description": "SWIR - Rose Hill Clinical Version",
   "main": "electron/main.js",
   "scripts": {

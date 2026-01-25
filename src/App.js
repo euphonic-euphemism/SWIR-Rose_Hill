@@ -746,8 +746,8 @@ function App() {
         const sizes = getBlockSizes(form); // Use form-specific block sizes
         sizes.forEach((size, blockIndex) => {
           // Calculate probability of correct recall based on set size
-          // AGGRESSIVE DECAY: Size 3 -> 0.80, Size 7 -> 0.20
-          const baseProb = 0.80 - (blockIndex * 0.15);
+          // AGGRESSIVE DECAY: Size 3 -> 0.80, Size 7 -> 0.08
+          const baseProb = 0.80 - (blockIndex * 0.18);
 
           const { start, end } = getBlockRange(blockIndex);
           const blockSentences = formSents.slice(start, end);
@@ -1066,7 +1066,7 @@ function App() {
 
   return (
     <div className="app">
-      <h1>SWIR - Rose Hill Clinical Version</h1>
+      <h1>SWIR - Rose Hill Clinical Version v1.1.0</h1>
 
       {/* Patient Info Section */}
       <div className="section">

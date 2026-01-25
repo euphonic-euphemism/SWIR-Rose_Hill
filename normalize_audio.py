@@ -10,11 +10,14 @@ BASE_PATH = "/home/marks/Development/swir_project/audio_output"
 # Where the "Ruler" files live (Shared Assets)
 CALIBRATION_FILE = os.path.join(BASE_PATH, "calibration_1khz_neg20db.wav")
 NOISE_FILE = os.path.join(BASE_PATH, "speech_shaped_noise.wav")
+BABBLE_FILE = os.path.join(BASE_PATH, "babble_noise.wav")
 
 # The specific subfolders where your sentences are hiding
 TARGET_FOLDERS = [
     os.path.join(BASE_PATH, "Form A/wav"),
-    os.path.join(BASE_PATH, "Form B/wav")
+    os.path.join(BASE_PATH, "Form B/wav"),
+    os.path.join(BASE_PATH, "Form C/wav"),
+    os.path.join(BASE_PATH, "Form P/wav")
 ]
 
 def measure_rms(audio_data):
@@ -42,6 +45,12 @@ def normalize_structured_assets():
         files_to_process.append(NOISE_FILE)
     else:
         print(f"Warning: Noise file not found at {NOISE_FILE}")
+
+    # A.2 Add the Babble File (if it exists)
+    if os.path.exists(BABBLE_FILE):
+        files_to_process.append(BABBLE_FILE)
+    else:
+        print(f"Warning: Babble file not found at {BABBLE_FILE}")
 
     # B. Add all sentences from Form A and Form B
     for folder in TARGET_FOLDERS:
