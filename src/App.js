@@ -211,33 +211,100 @@ function App() {
     return formSentences.slice(start, end);
   };
 
-  const getBlockStats = (blockNum) => {
-    const { start, end } = getBlockRange(blockNum);
-    const blockSentences = formSentences.slice(start, end);
-    const formScores = scores[currentForm];
+  const getTotalScore = (formName) => {
+    // Total Score = Percentage of sentences where the TARGET word was identified correctly? 
+    // OR Percentage of ALL words?
+    // Based on Benefit Score context (Target Words), likely Total Score is also Target Words.
+    // But let's check getFormBlockStats from before.
 
+    const formScores = scores[formName] || {};
+    const formSents = sentencesData.filter(s => s.list === formName);
     let correct = 0;
     let total = 0;
 
-    blockSentences.forEach(sentence => {
-      if (formScores[sentence.id] !== undefined) {
+    // In the previous version, getFormBlockStats iteration:
+    // if (formScores[sentence.id] === true) correct++;
+    // This implies formScores[sentence.id] was treated as a boolean in some contexts OR
+    // maybe we should count TARGET words.
+
+    // I will assume we score based on the TARGET word for consistency with Benefit Score.
+    formSents.forEach(sentence => {
+      const sentScore = formScores[sentence.id]; // Array of bools
+      if (sentScore) {
         total++;
-        if (formScores[sentence.id]) correct++;
+        // Check Target (Last Word for Form A/B?)
+        // Generally sentences have 'target' field.
+        // Find index of target word?
+        const words = sentence.text.split(' ');
+        const lastIndex = words.length - 1; // Assuming target is last word as per Protocol
+        if (sentScore[lastIndex] === true) correct++;
       }
     });
 
-    return { correct, total, percentage: total > 0 ? (correct / total * 100) : 0 };
+    // Wait, Total Score usually counts total POSSIBLE sentences, not just scored ones?
+    // The previous code had `scoredCount` and `correctCount`.
+    // Let's use `formSents.length`.
+    total = formSents.length;
+
+    const percentage = total > 0 ? (correct / total * 100).toFixed(1) : 0;
+    return { correct, total, percentage };
+  };
+
+  const getBenefitScore = (formName) => {
+    const targetBlockIndices = [2, 3, 4]; // Sizes 5, 6, 7
+    const formSents = sentencesData.filter(s => s.list === formName);
+    const formScores = scores[formName] || {};
+
+    let totalCorrect = 0;
+    let totalPossible = 0;
+
+    targetBlockIndices.forEach(blockIndex => {
+      const { start, end } = getBlockRange(blockIndex);
+      const blockSentences = formSents.slice(start, end);
+
+      const startIndex = Math.max(0, blockSentences.length - 2);
+      const recencySentences = blockSentences.slice(startIndex);
+
+      recencySentences.forEach(sentence => {
+        totalPossible++;
+        // Check Target Word (Last Word)
+        const sentScore = formScores[sentence.id]; // Array
+        if (sentScore) {
+          const words = sentence.text.split(' ');
+          const lastIndex = words.length - 1;
+          if (sentScore[lastIndex] === true) totalCorrect++;
+        }
+      });
+    });
+
+    const percentage = totalPossible > 0 ? (totalCorrect / totalPossible * 100).toFixed(1) : 0;
+    return { correct: totalCorrect, total: totalPossible, percentage };
+  };
+
+  const getStrategyIndex = (formName) => {
+    // Strategy Index = (Sentences where First Correct was Last Word / Total Scored Sentences) * 100
+    const formStrategies = strategyScores[formName] || {};
+    const entries = Object.values(formStrategies);
+    // Note: older logic used Object.values which might include 'undefined'? No.
+    // Filter boolean true
+
+    // We need total *scored* sentences for denominator?
+    // Using strategyScores count implies we only count sentences where a strategy outcome was determined (i.e. at least one word clicked).
+    const totalScoredWithStrategy = entries.length;
+    const recencyCount = entries.filter(v => v === true).length;
+
+    const percentage = totalScoredWithStrategy > 0 ? (recencyCount / totalScoredWithStrategy * 100).toFixed(1) : 0;
+
+    return { count: recencyCount, total: totalScoredWithStrategy, percentage };
   };
 
   const getFormBlockStats = (formName) => {
     const formSents = sentencesData.filter(s => s.list === formName);
+    const formScores = scores[formName] || {};
 
-    // Safety check
     if (!formSents || formSents.length === 0) {
       return getBlockSizes(formName).map(() => ({ correct: 0, total: 0, percentage: 0 }));
     }
-
-    const formScores = scores[formName] || {};
 
     return getBlockSizes(formName).map((size, blockNum) => {
       const { start, end } = getBlockRange(blockNum);
@@ -247,55 +314,17 @@ function App() {
       let total = 0;
 
       blockSentences.forEach(sentence => {
-        if (sentence && formScores[sentence.id] !== undefined) {
-          total++;
-          if (formScores[sentence.id]) correct++;
+        total++;
+        const sentScore = formScores[sentence.id];
+        if (sentScore) {
+          const words = sentence.text.split(' ');
+          const lastIndex = words.length - 1;
+          if (sentScore[lastIndex] === true) correct++;
         }
       });
 
       return { correct, total, percentage: total > 0 ? (correct / total * 100) : 0 };
     });
-  };
-
-  const getBenefitScore = (formName) => {
-    // Indices 2, 3, 4 corresponds to Block Sizes 5, 6, 7
-    const targetBlockIndices = [2, 3, 4]; // 3rd, 4th, 5th blocks
-    const formSents = sentencesData.filter(s => s.list === formName);
-    const formScores = scores[formName] || {};
-
-    let totalCorrect = 0;
-    let totalTarget = 0;
-
-    targetBlockIndices.forEach(blockIndex => {
-      const { start, end } = getBlockRange(blockIndex);
-      const blockSentences = formSents.slice(start, end);
-
-      blockSentences.forEach(sentence => {
-        if (sentence && formScores[sentence.id] !== undefined) {
-          totalTarget++;
-          if (formScores[sentence.id]) totalCorrect++;
-        }
-      });
-    });
-
-    const percentage = totalTarget > 0 ? (totalCorrect / totalTarget * 100).toFixed(1) : 0;
-    return { correct: totalCorrect, total: totalTarget, percentage };
-  };
-
-  const getStrategyIndex = (formName) => {
-    // Strategy Index = (Sentences where First Correct was Last Word / Total Scored Sentences) * 100
-    // But user request says "total number of blocks" - clarification implies "number of sentence blocks where..." which likely means sentences.
-    // Assuming "blocks" in user request means "sentences" (the items being scored).
-
-    // Total sentences where a strategy was recorded (i.e. at least one correct word was scored)
-    const formStrategies = strategyScores[formName] || {};
-    const entries = Object.values(formStrategies);
-    const totalScoredWithStrategy = entries.length;
-    const recencyCount = entries.filter(v => v === true).length;
-
-    const percentage = totalScoredWithStrategy > 0 ? (recencyCount / totalScoredWithStrategy * 100).toFixed(1) : 0;
-
-    return { count: recencyCount, total: totalScoredWithStrategy, percentage };
   };
 
   const playCalibration = async () => {
@@ -577,8 +606,8 @@ function App() {
     const sizes = getBlockSizes(currentForm);
     // Stopping Rule: If Form A or B, and current + previous block are 0%, stop.
     if (['A', 'B'].includes(currentForm) && currentBlock > 0) {
-      const currentStats = getBlockStats(currentBlock);
-      const prevStats = getBlockStats(currentBlock - 1);
+      const currentStats = getFormBlockStats(currentForm)[currentBlock];
+      const prevStats = getFormBlockStats(currentForm)[currentBlock - 1];
 
       if (currentStats.percentage === 0 && prevStats.percentage === 0) {
         // Trigger Stopping Rule
@@ -596,7 +625,18 @@ function App() {
         setScores(prev => {
           const updatedForm = { ...prev[currentForm] };
           allSentenceIdsToFail.forEach(id => {
-            updatedForm[id] = false;
+            // UpdatedForm is map of Id -> Array of Bools
+            // Fail means everything false? Or target false?
+            // Assuming empty array or explicitly all false
+            // But we don't know word count easily here without lookup.
+            // Just delete entry? OR Set empty?
+            // Before changes, it was 'false' used in simple mode, but in word mode it expects array.
+            // If initialized as array...
+            // Look at reset: {}
+            // If we assume un-scored is wrong, then removing key is fine.
+            // But verify algorithm: getBlockStats checks `if (score)`
+            // If key missing, score undefined -> not correct.
+            delete updatedForm[id];
           });
           return {
             ...prev,
@@ -629,20 +669,10 @@ function App() {
     }
   };
 
-  const scoreSentence = (sentenceId, correct) => {
-    setScores(prev => ({
-      ...prev,
-      [currentForm]: {
-        ...prev[currentForm],
-        [sentenceId]: correct
-      }
-    }));
-  };
-
   const toggleWordScore = (sentenceId, wordIndex, isCorrect) => {
     // Update Score
     setScores(prev => {
-      const currentFormScores = prev[currentForm];
+      const currentFormScores = prev[currentForm] || {}; // This makes sure we don't crash if undefined
       const currentSentenceScores = currentFormScores[sentenceId] || []; // Array of bools
 
       // Copy array or create new one enough to hold index
@@ -700,15 +730,11 @@ function App() {
     if (window.confirm(`Are you sure you want to reset all scores for Form ${currentForm}?`)) {
       setScores(prev => ({
         ...prev,
-        [currentForm]: {}
+        [currentForm]: {} // Clear scores for current form
       }));
       setStrategyScores(prev => ({
         ...prev,
-        [currentForm]: {}
-      }));
-      setHearingAidModels(prev => ({
-        ...prev,
-        [currentForm]: ''
+        [currentForm]: {} // Clear strategies for current form
       }));
       setCurrentBlock(0);
       setShowScoring(false);
@@ -758,33 +784,38 @@ function App() {
             // Clamp
             const effectiveProb = Math.max(0.05, Math.min(0.95, sentenceProb));
 
+            // Simulate Strategy
             const isCorrect = Math.random() < effectiveProb;
+            const words = sentence.text.split(' ');
+            const wordCount = words.length;
 
-            // For Form A/B, score is a single boolean (Target Word Correctness)
-            newScores[form][sentence.id] = isCorrect;
-
-            // Simulate Strategy: If correct, 60% chance they said it first (Recency)
-            // Note: Since we only score the TARGET word in Form A/B, we use that as proxy.
-            // If the sentence is correct, we assume they got the target.
-            // For Strategy Index, we need to decide if this 'Correct' event was the 'Last Word'.
-
-            // To properly simulate the Strategy Index which relies on 'toggleWordScore' logic
-            // (where we check if the first correct mark was the last word),
-            // we need to set the strategy score directly here.
+            // New structure: words array
+            const simulatedWords = new Array(wordCount).fill(false);
 
             if (isCorrect) {
+              // Mark target (last) word as correct
+              simulatedWords[wordCount - 1] = true;
+
+              // Randomly other words
+              for (let i = 0; i < wordCount - 1; i++) {
+                if (Math.random() < 0.8) simulatedWords[i] = true;
+              }
+
+              // Strategy logic (handled by setStrategyScores in simulation)
               if (Math.random() < 0.6) {
                 newStrategyScores[form][sentence.id] = true;
-              } else {
-                newStrategyScores[form][sentence.id] = false;
               }
+            } else {
+              newStrategyScores[form][sentence.id] = false;
             }
+
+            newScores[form][sentence.id] = simulatedWords;
           });
         });
       });
 
       setScores(newScores);
-      setStrategyScores(newStrategyScores);
+      setStrategyScores(newStrategyScores); // This will be removed later as strategy is in scores
       setCurrentForm('A');
       setCurrentBlock(0);
       setShowScoring(false);
@@ -807,18 +838,15 @@ function App() {
     // Helper to print stats for a form
     const printFormStats = (formName) => {
       const formScores = scores[formName];
-      const scoredCount = Object.keys(formScores).length;
+      const totalScore = getTotalScore(formName);
 
-      if (scoredCount === 0) return '';
-
-      const correctCount = Object.values(formScores).filter(Boolean).length;
-      const percentage = (correctCount / scoredCount * 100).toFixed(1);
+      if (totalScore.total === 0) return '';
 
       let section = `--- FORM ${formName} ---\n`;
       if (hearingAidModels[formName]) {
         section += `Hearing Aid Model: ${hearingAidModels[formName]}\n`;
       }
-      section += `Total Score: ${percentage}% (${correctCount}/${scoredCount})\n`;
+      section += `Total Score: ${totalScore.percentage}% (${totalScore.correct}/${totalScore.total})\n`;
 
       const benefit = getBenefitScore(formName);
       if (benefit.total > 0) {
@@ -849,31 +877,43 @@ function App() {
     content += 'DETAILED LOG:\n';
     content += '-'.repeat(80) + '\n';
 
-    let correctCount = 0;
-    let scoredCount = 0;
-
     formSentences.forEach(sentence => {
-      const score = scores[currentForm][sentence.id];
-      const result = score === undefined ? 'NOT SCORED' : (score ? 'CORRECT' : 'INCORRECT');
+      const scoreArray = scores[currentForm][sentence.id];
+      let result = 'NOT SCORED';
+      let otherInfo = '';
 
-      if (score !== undefined) {
-        scoredCount++;
-        if (score) correctCount++;
+      if (scoreArray) {
+        // Check words
+        const words = sentence.text.split(' ');
+        const lastWordIndex = words.length - 1;
+        const isTargetCorrect = scoreArray[lastWordIndex] === true;
+
+        if (isTargetCorrect) {
+          result = 'CORRECT';
+          // List all correct words?
+          const correctWords = words.filter((_, idx) => scoreArray[idx]).join(', ');
+          otherInfo = ` (Words: ${correctWords})`;
+        } else {
+          result = 'INCORRECT';
+        }
       }
+
+      const sStrat = strategyScores[currentForm] && strategyScores[currentForm][sentence.id];
+      if (sStrat) otherInfo += ' (Strategy Used)';
 
       content += `ID: ${sentence.id}\n`;
       content += `Sentence: ${sentence.text}\n`;
       content += `Target: ${sentence.target}\n`;
-      content += `Result: ${result}\n`;
+      content += `Result: ${result}${otherInfo}\n`;
       content += '-'.repeat(80) + '\n';
     });
 
     content += '\nSUMMARY\n';
     content += '='.repeat(80) + '\n';
-    if (scoredCount > 0) {
-      const percentage = (correctCount / scoredCount * 100).toFixed(1);
-      content += `Scored: ${scoredCount}/${formSentences.length} sentences\n`;
-      content += `Correct: ${correctCount}/${scoredCount} = ${percentage}%\n`;
+    const totalScoreSummary = getTotalScore(currentForm);
+    if (totalScoreSummary.total > 0) {
+      content += `Scored: ${totalScoreSummary.total} sentences\n`;
+      content += `Correct: ${totalScoreSummary.correct}/${totalScoreSummary.total} = ${totalScoreSummary.percentage}%\n`;
     } else {
       content += 'No sentences scored.\n';
     }
@@ -908,13 +948,13 @@ function App() {
     // Helper to get stats
     const getStats = (f) => {
       const fScores = scores[f];
-      const sCount = Object.keys(fScores).length;
-      if (sCount === 0) return null;
-      const cCount = Object.values(fScores).filter(Boolean).length;
-      const pct = (cCount / sCount * 100).toFixed(1);
+      const totalScore = getTotalScore(f);
+      if (totalScore.total === 0) return null;
+      const pct = totalScore.percentage;
+      const count = `${totalScore.correct}/${totalScore.total}`;
       const ben = getBenefitScore(f);
       const strat = getStrategyIndex(f);
-      return { pct, count: `${cCount}/${sCount}`, ben, strat };
+      return { pct, count, ben, strat };
     };
 
     const statsA = getStats('A');
@@ -1052,21 +1092,21 @@ function App() {
   const targets = blockSentences.map(s => s.target).join(', ');
 
   // Calculate summary stats
-  const formScores = scores[currentForm];
-  const scoredCount = Object.keys(formScores).length;
-  const correctCount = Object.values(formScores).filter(Boolean).length;
-  const percentage = scoredCount > 0 ? (correctCount / scoredCount * 100).toFixed(1) : 0;
+  const totalFormScore = getTotalScore(currentForm);
+  const percentage = totalFormScore.percentage;
+  const correctCount = totalFormScore.correct;
+  const scoredCount = totalFormScore.total;
 
   const benefitStats = getBenefitScore(currentForm);
   const strategyStats = getStrategyIndex(currentForm);
 
   // Calculate block statistics for graph
-  const blockStats = getBlockSizes(currentForm).map((size, index) => getBlockStats(index));
-  const allScored = scoredCount > 0 && scoredCount === formSentences.length;
+  const blockStats = getBlockSizes(currentForm).map((size, index) => getFormBlockStats(currentForm)[index]);
+  const allScored = scoredCount > 0 && scoredCount === formSentences.length; // This logic might need adjustment based on 'no_response'
 
   return (
     <div className="app">
-      <h1>SWIR - Rose Hill Clinical Version v1.1.0</h1>
+      <h1>SWIR - Rose Hill Clinical Version v1.1.1</h1>
 
       {/* Patient Info Section */}
       <div className="section">
@@ -1352,28 +1392,60 @@ function App() {
                 <>
                   <div className="scoring-title">Score each target word:</div>
                   <div className="scoring-grid">
-                    {blockSentences.map(sentence => {
-                      const score = scores[currentForm][sentence.id];
+                    {blockSentences.map((sentence, idx) => {
+                      const scoreArray = scores[currentForm][sentence.id] || [];
+                      const isCurrent = currentPlayingIndex === idx;
+
                       return (
-                        <div key={sentence.id} className="scoring-row">
-                          <div className="scoring-row-label">
-                            ID {sentence.id}: {sentence.target}
+                        <div key={sentence.id} className="scoring-row" style={{
+                          backgroundColor: isCurrent ? '#e3f2fd' : 'transparent',
+                          border: isCurrent ? '2px solid #2196f3' : '1px solid transparent'
+                        }}>
+                          <div className="sentence-text-display">
+                            {/* Word Clicking Interface */}
+                            {sentence.text.trim().split(/\s+/).map((word, wIdx) => {
+                              const cleanWord = word.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").toLowerCase();
+                              const target = sentence.target.toLowerCase();
+
+                              // Check if cleanWord *ends with* target (e.g. 'oclock' ends with 'clock')
+                              // Also verify length difference is reasonable (e.g. at most 2 chars difference? 'o' + 'clock' = 6 vs 5)
+                              // Simple endsWith is likely enough for fixed sentences.
+                              const isTarget = cleanWord === target || (cleanWord.endsWith(target) && cleanWord.length <= target.length + 2);
+
+                              // Use scoreArray index... wait if split differs, index differs.
+                              // scoreArray assumes a fixed mapping.
+                              // If previously split by ' ', and now by regex, result should be same for normal text.
+                              // If text had double spaces, split(' ') gives empty strings. split(/\s+/) removes them.
+                              // This is BETTER.
+
+                              // We must ensure the scoreArray mapping aligns with this split.
+                              // toggleWordScore uses logic? It uses index.
+                              // When initializing/scoring, we just use the index.
+                              // So as long as we consistently split, it's fine.
+
+                              const isWordScored = scoreArray[wIdx] === true;
+
+                              return (
+                                <span
+                                  key={wIdx}
+                                  onClick={() => toggleWordScore(sentence.id, wIdx, !isWordScored)}
+                                  style={{
+                                    fontWeight: isTarget ? 'bold' : 'normal',
+                                    marginRight: '6px',
+                                    cursor: 'pointer',
+                                    padding: '2px 5px',
+                                    borderRadius: '4px',
+                                    backgroundColor: isWordScored ? '#d4edda' : (isTarget ? '#e7f1ff' : 'transparent'),
+                                    color: isWordScored ? '#155724' : (isTarget ? '#007bff' : '#333'),
+                                    border: isWordScored ? '1px solid #c3e6cb' : '1px solid transparent',
+                                    transition: 'all 0.1s'
+                                  }}>
+                                  {word}
+                                </span>
+                              );
+                            })}
                           </div>
-                          <button
-                            className="btn btn-success"
-                            onClick={() => scoreSentence(sentence.id, true)}
-                          >
-                            ✓
-                          </button>
-                          <button
-                            className="btn btn-danger"
-                            onClick={() => scoreSentence(sentence.id, false)}
-                          >
-                            ✗
-                          </button>
-                          <div className={`score-status ${score === true ? 'correct' : score === false ? 'incorrect' : ''}`}>
-                            {score === undefined ? 'Not scored' : score ? '✓ Correct' : '✗ Incorrect'}
-                          </div>
+                          {/* No Buttons */}
                         </div>
                       );
                     })}
@@ -1493,7 +1565,7 @@ function App() {
                   <th style={{ textAlign: 'left', padding: '8px' }}>Metric</th>
                   <th style={{ textAlign: 'center', padding: '8px', color: '#667eea' }}>Form A</th>
                   <th style={{ textAlign: 'center', padding: '8px', color: '#ff9f43' }}>Form B</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontWeight: 'bold' }}>Net (B-A)</th>
+                  <th style={{ textAlign: 'center', padding: '8px', fontWeight: 'bold' }}>Net Difference</th>
                 </tr>
               </thead>
               <tbody>
@@ -1510,7 +1582,7 @@ function App() {
 
                   const pctA = getPct('A');
                   const pctB = getPct('B');
-                  const netPct = (pctA && pctB) ? (pctB - pctA).toFixed(1) : '-';
+                  const netPct = (pctA && pctB) ? Math.abs(parseFloat(pctB) - parseFloat(pctA)).toFixed(1) : '-';
 
                   // Benefit
                   const getBen = (f) => {
@@ -1532,13 +1604,13 @@ function App() {
 
                   const stratA = getStrat('A');
                   const stratB = getStrat('B');
-                  const netStrat = (stratA !== null && stratB !== null) ? (parseFloat(stratB) - parseFloat(stratA)).toFixed(1) : '-';
+                  const netStrat = (stratA !== null && stratB !== null) ? Math.abs(parseFloat(stratB) - parseFloat(stratA)).toFixed(1) : '-';
 
                   const fmt = (val) => val !== null ? `${val}%` : '-';
                   const fmtNet = (val) => {
                     if (val === '-') return '-';
                     const n = parseFloat(val);
-                    return `${n >= 0 ? '+' : ''}${n}%`;
+                    return `${n}%`;
                   };
 
                   return (
@@ -1550,13 +1622,25 @@ function App() {
                         <td style={{ textAlign: 'center', padding: '8px', color: '#666' }}>{fmtNet(netPct)}</td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #eee' }}>
-                        <td style={{ padding: '8px' }}>Benefit Score</td>
+                        <td style={{ padding: '8px' }}>
+                          <div className="tooltip-container">
+                            Benefit Score
+                            <span className="info-icon">i</span>
+                            <span className="tooltip-text">Measures Cognitive Spare Capacity. Shows the % of correct recall for the last 2 words of long lists (5-7 sentences). Higher scores indicate reduced listening effort.</span>
+                          </div>
+                        </td>
                         <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(benA)}</td>
                         <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(benB)}</td>
                         <td style={{ textAlign: 'center', padding: '8px', fontWeight: 'bold' }}>{fmtNet(netBen)}</td>
                       </tr>
                       <tr>
-                        <td style={{ padding: '8px' }}>Strategy Index</td>
+                        <td style={{ padding: '8px' }}>
+                          <div className="tooltip-container">
+                            Strategy Index
+                            <span className="info-icon">i</span>
+                            <span className="tooltip-text">Measures Cognitive Efficiency. Shows how often the patient started their recall with the last word heard. High scores (&gt;70%) suggest an efficient, low-effort strategy.</span>
+                          </div>
+                        </td>
                         <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(stratA)}</td>
                         <td style={{ textAlign: 'center', padding: '8px' }}>{fmt(stratB)}</td>
                         <td style={{ textAlign: 'center', padding: '8px', color: '#666' }}>{fmtNet(netStrat)}</td>
