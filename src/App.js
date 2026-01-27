@@ -775,6 +775,11 @@ function App() {
 
   const startNewTest = () => {
     if (window.confirm("Start a new test? This will clear all current data (Patient Name, Scores, Timer).")) {
+      // Blur current button
+      if (document.activeElement) {
+        document.activeElement.blur();
+      }
+
       setPatientName('');
       setTestDate(new Date().toISOString().split('T')[0]);
       setScores({ A: {}, B: {}, P: {} });
@@ -787,7 +792,172 @@ function App() {
       setCurrentBlock(0);
       setShowScoring(false);
       setIsPractice(false);
+
+      // Explicitly focus Patient Name to ensure interactivity
+      setTimeout(() => {
+        const patientInput = document.getElementById('patientName');
+        if (patientInput) {
+          patientInput.focus();
+        }
+      }, 100);
     }
+  };
+
+  /* Database Functionality */
+  // Load database from localStorage on mount
+  const [testDatabase, setTestDatabase] = useState([]);
+
+  useEffect(() => {
+    try {
+      const storedDb = localStorage.getItem('swir_test_database');
+      if (storedDb) {
+        setTestDatabase(JSON.parse(storedDb));
+      }
+    } catch (err) {
+      console.error('Failed to load database from localStorage', err);
+    }
+  }, []);
+
+  // Save database to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('swir_test_database', JSON.stringify(testDatabase));
+  }, [testDatabase]);
+
+  const saveToDatabase = () => {
+    if (!patientName) {
+      alert('Please enter a Patient Name before saving to the database.');
+      return;
+    }
+    const newRecord = {
+      id: Date.now(), // Simple unique ID
+      patientName,
+      testDate,
+      scores,
+      strategyScores,
+      hearingAidModels,
+      quickSIN,
+      timestamp: new Date().toISOString()
+    };
+
+    setTestDatabase(prev => [...prev, newRecord]);
+    alert('Test saved to local database!');
+  };
+
+  const exportDatabase = () => {
+    if (testDatabase.length === 0) {
+      alert('Database is empty.');
+      return;
+    }
+    const fileName = `swir_database_export_${new Date().toISOString().slice(0, 10)}.json`;
+    const jsonStr = JSON.stringify(testDatabase, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importDatabase = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const importedData = JSON.parse(event.target.result);
+        if (!Array.isArray(importedData)) {
+          throw new Error('File does not contain an array of records.');
+        }
+
+        // Merge strategy: Prevent exact duplicates based on timestamp/id?
+        // Simple Append for now, or check ID
+        setTestDatabase(prev => {
+          const existingIds = new Set(prev.map(r => r.id));
+          const newRecords = importedData.filter(r => !existingIds.has(r.id));
+
+          if (newRecords.length < importedData.length) {
+            alert(`Imported ${newRecords.length} new records. (${importedData.length - newRecords.length} duplicates skipped)`);
+          } else {
+            alert(`Successfully imported ${newRecords.length} records.`);
+          }
+
+          return [...prev, ...newRecords];
+        });
+      } catch (err) {
+        alert('Error importing database: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const clearDatabase = () => {
+    if (window.confirm('Are you sure you want to clear the entire local database? This cannot be undone.')) {
+      setTestDatabase([]);
+    }
+  };
+
+  /* Save / Load Functionality (Single Session) */
+  const savePatientData = () => {
+    const data = {
+      patientName,
+      testDate,
+      scores,
+      strategyScores,
+      hearingAidModels,
+      quickSIN,
+      currentForm, // Optional: restore their place?
+      currentBlock // Optional
+    };
+
+    const fileName = `swir_patient_${patientName.replace(/\s+/g, '_') || 'unnamed'}_${testDate}.json`;
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const loadPatientData = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+
+        // Restore State
+        if (data.patientName !== undefined) setPatientName(data.patientName);
+        if (data.testDate !== undefined) setTestDate(data.testDate);
+        if (data.scores) setScores(data.scores);
+        if (data.strategyScores) setStrategyScores(data.strategyScores);
+        if (data.hearingAidModels) setHearingAidModels(data.hearingAidModels);
+        if (data.quickSIN !== undefined) setQuickSIN(data.quickSIN);
+
+        // Optional: Restore form/place
+        if (data.currentForm) setCurrentForm(data.currentForm);
+        if (data.currentBlock !== undefined) setCurrentBlock(data.currentBlock);
+
+        alert(`Successfully loaded patient data for ${data.patientName || 'Unnamed'}`);
+      } catch (err) {
+        alert('Error parsing patient file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so same file can be loaded again if needed
+    e.target.value = '';
   };
 
   const simulateTest = () => {
@@ -1138,7 +1308,7 @@ function App() {
 
   return (
     <div className="app">
-      <h1>SWIR - Rose Hill Clinical Version v1.1.2</h1>
+      <h1>SWIR - Rose Hill Clinical Version v1.1.3</h1>
 
       {/* Patient Info Section */}
       <div className="section">
@@ -1174,6 +1344,28 @@ function App() {
             >
               New Test
             </button>
+            <div style={{ width: '1px', background: '#ccc', margin: '0 5px' }}></div>
+            <button
+              onClick={savePatientData}
+              className="btn btn-secondary"
+              style={{ padding: '8px 16px', fontSize: '0.9em' }}
+            >
+              💾 Save Patient
+            </button>
+            <button
+              onClick={() => document.getElementById('loadPatientInput').click()}
+              className="btn btn-secondary"
+              style={{ padding: '8px 16px', fontSize: '0.9em' }}
+            >
+              📂 Load Patient
+            </button>
+            <input
+              type="file"
+              id="loadPatientInput"
+              accept=".json"
+              style={{ display: 'none' }}
+              onChange={loadPatientData}
+            />
           </div>
         </div>
         <div className="patient-info-grid">
@@ -1776,6 +1968,54 @@ function App() {
 
 
 
+      {/* Database Management Section */}
+      <div className="section">
+        <div className="section-title">Results Database</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <strong>Stored Records: {testDatabase.length}</strong>
+            <p style={{ fontSize: '0.85em', color: '#666', margin: '5px 0 0 0' }}>
+              Tests are saved locally in your browser. Export to JSON to back them up.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={saveToDatabase}
+              className="btn btn-success"
+              title="Add current test results to the local database"
+            >
+              + Add Current Test
+            </button>
+            <div style={{ width: '1px', background: '#ccc', margin: '0 5px' }}></div>
+            <button
+              onClick={exportDatabase}
+              className="btn btn-secondary"
+            >
+              Export DB
+            </button>
+            <button
+              onClick={() => document.getElementById('importDbInput').click()}
+              className="btn btn-secondary"
+            >
+              Import DB
+            </button>
+            <input
+              type="file"
+              id="importDbInput"
+              accept=".json"
+              style={{ display: 'none' }}
+              onChange={importDatabase}
+            />
+            <button
+              onClick={clearDatabase}
+              className="btn btn-danger"
+              style={{ marginLeft: '10px' }}
+            >
+              Clear DB
+            </button>
+          </div>
+        </div>
+      </div>
       {/* Bottom Buttons */}
       <div className="bottom-buttons">
         <button className="btn btn-secondary" onClick={resetForm}>
