@@ -235,7 +235,7 @@ function App() {
         // Check Target (Last Word for Form A/B?)
         // Generally sentences have 'target' field.
         // Find index of target word?
-        const words = sentence.text.split(' ');
+        const words = sentence.text.trim().split(/\s+/);
         const lastIndex = words.length - 1; // Assuming target is last word as per Protocol
         if (sentScore[lastIndex] === true) correct++;
       }
@@ -270,7 +270,7 @@ function App() {
         // Check Target Word (Last Word)
         const sentScore = formScores[sentence.id]; // Array
         if (sentScore) {
-          const words = sentence.text.split(' ');
+          const words = sentence.text.trim().split(/\s+/);
           const lastIndex = words.length - 1;
           if (sentScore[lastIndex] === true) totalCorrect++;
         }
@@ -317,7 +317,7 @@ function App() {
         total++;
         const sentScore = formScores[sentence.id];
         if (sentScore) {
-          const words = sentence.text.split(' ');
+          const words = sentence.text.trim().split(/\s+/);
           const lastIndex = words.length - 1;
           if (sentScore[lastIndex] === true) correct++;
         }
@@ -384,9 +384,41 @@ function App() {
     }
   };
 
-  const playCalibrationChannel = (panValue, channelName) => {
+  const playSpeechNoiseLeft = async () => {
+    if (!audioContextRef.current) return;
+    setIsCalibrationPlaying(true);
+    try {
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      await playCalibrationChannel(-1, 'Speech Left', 'speech_shaped_noise.wav');
+      setIsCalibrationPlaying(false);
+    } catch (err) {
+      alert('Error playing speech noise left: ' + err.message);
+      setIsCalibrationPlaying(false);
+    }
+  };
+
+  const playSpeechNoiseRight = async () => {
+    if (!audioContextRef.current) return;
+    setIsCalibrationPlaying(true);
+    try {
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      await playCalibrationChannel(1, 'Speech Right', 'speech_shaped_noise.wav');
+      setIsCalibrationPlaying(false);
+    } catch (err) {
+      alert('Error playing speech noise right: ' + err.message);
+      setIsCalibrationPlaying(false);
+    }
+  };
+
+  /* Calibration Logic */
+
+  const playCalibrationChannel = (panValue, channelName, filename = 'calibration_1khz_neg20db.wav') => {
     return new Promise((resolve, reject) => {
-      const audio = new Audio(`${audioBaseUrl}/calibration_1khz_neg20db.wav`);
+      const audio = new Audio(`${audioBaseUrl}/${filename}`);
       audio.crossOrigin = 'anonymous';
 
       const source = audioContextRef.current.createMediaElementSource(audio);
@@ -709,7 +741,7 @@ function App() {
           // Check if it is the LAST word.
           const sentence = sentencesData.find(s => s.id === sentenceId);
           if (sentence) {
-            const wordCount = sentence.text.split(' ').length;
+            const wordCount = sentence.text.trim().split(/\s+/).length;
             const isLastWord = wordIndex === wordCount - 1;
 
             return {
@@ -786,7 +818,7 @@ function App() {
 
             // Simulate Strategy
             const isCorrect = Math.random() < effectiveProb;
-            const words = sentence.text.split(' ');
+            const words = sentence.text.trim().split(/\s+/);
             const wordCount = words.length;
 
             // New structure: words array
@@ -884,7 +916,7 @@ function App() {
 
       if (scoreArray) {
         // Check words
-        const words = sentence.text.split(' ');
+        const words = sentence.text.trim().split(/\s+/);
         const lastWordIndex = words.length - 1;
         const isTargetCorrect = scoreArray[lastWordIndex] === true;
 
@@ -1106,7 +1138,7 @@ function App() {
 
   return (
     <div className="app">
-      <h1>SWIR - Rose Hill Clinical Version v1.1.1</h1>
+      <h1>SWIR - Rose Hill Clinical Version v1.1.2</h1>
 
       {/* Patient Info Section */}
       <div className="section">
@@ -1249,17 +1281,26 @@ function App() {
           </div>
           <div className="separator"></div>
           {!isCalibrationPlaying ? (
-            <div className="calibration-buttons">
-              <button className="btn btn-secondary" onClick={playCalibrationLeft}>
-                🔊 Left Channel
-              </button>
-              <button className="btn btn-secondary" onClick={playCalibration}>
-                🔊 Both Channels
-              </button>
-              <button className="btn btn-secondary" onClick={playCalibrationRight}>
-                🔊 Right Channel
-              </button>
-            </div>
+            <>
+              <div className="calibration-buttons">
+                <span style={{ marginRight: '10px', fontSize: '0.9em', display: 'inline-block', width: '140px', textAlign: 'right' }}>Calibration Tone:</span>
+                <button className="btn btn-secondary" onClick={playCalibrationLeft} style={{ width: '160px', flex: 'none' }}>
+                  🔊 1kHz Left
+                </button>
+                <button className="btn btn-secondary" onClick={playCalibrationRight} style={{ width: '160px', flex: 'none' }}>
+                  🔊 1kHz Right
+                </button>
+              </div>
+              <div className="calibration-buttons" style={{ marginTop: '5px' }}>
+                <span style={{ marginRight: '10px', fontSize: '0.9em', display: 'inline-block', width: '140px', textAlign: 'right' }}>Speech Noise:</span>
+                <button className="btn btn-secondary" onClick={playSpeechNoiseLeft} style={{ width: '160px', flex: 'none' }}>
+                  🔊 Left
+                </button>
+                <button className="btn btn-secondary" onClick={playSpeechNoiseRight} style={{ width: '160px', flex: 'none' }}>
+                  🔊 Right
+                </button>
+              </div>
+            </>
           ) : (
             <button className="btn btn-danger" onClick={stopCalibration}>
               ⏸ Stop Calibration
