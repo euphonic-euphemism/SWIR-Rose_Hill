@@ -758,20 +758,7 @@ function App() {
     }
   };
 
-  const resetForm = () => {
-    if (window.confirm(`Are you sure you want to reset all scores for Form ${currentForm}?`)) {
-      setScores(prev => ({
-        ...prev,
-        [currentForm]: {} // Clear scores for current form
-      }));
-      setStrategyScores(prev => ({
-        ...prev,
-        [currentForm]: {} // Clear strategies for current form
-      }));
-      setCurrentBlock(0);
-      setShowScoring(false);
-    }
-  };
+
 
   const startNewTest = () => {
     if (window.confirm("Start a new test? This will clear all current data (Patient Name, Scores, Timer).")) {
@@ -793,13 +780,20 @@ function App() {
       setShowScoring(false);
       setIsPractice(false);
 
-      // Explicitly focus Patient Name to ensure interactivity
-      setTimeout(() => {
+      // Explicitly focus Patient Name with a multi-step retry for slower environments (Electron/Linux)
+      const forceFocus = () => {
         const patientInput = document.getElementById('patientName');
         if (patientInput) {
+          // Sometimes a click event helps wake up the input in strict window managers
+          patientInput.click();
           patientInput.focus();
         }
-      }, 100);
+      };
+
+      // Try immediately
+      setTimeout(forceFocus, 50);
+      // Try again slightly later in case of render/window lag
+      setTimeout(forceFocus, 300);
     }
   };
 
@@ -1308,7 +1302,7 @@ function App() {
 
   return (
     <div className="app">
-      <h1>SWIR - Rose Hill Clinical Version v1.1.3</h1>
+      <h1>SWIR - Rose Hill Clinical Version v1.1.4</h1>
 
       {/* Patient Info Section */}
       <div className="section">
@@ -2018,9 +2012,7 @@ function App() {
       </div>
       {/* Bottom Buttons */}
       <div className="bottom-buttons">
-        <button className="btn btn-secondary" onClick={resetForm}>
-          Reset Form
-        </button>
+
         <button className="btn" onClick={exportResults}>
           Export Results
         </button>
